@@ -1,0 +1,7 @@
+---
+kind: wasmer.io/App.v0
+name: sniper-duels
+package: .
+env:
+  PORT: "8080"
+  NODE_ENV: "production"
