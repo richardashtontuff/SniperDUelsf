@@ -439,75 +439,60 @@ function checkMatchmakingQueue() {
   broadcast({
     type: 'QUEUE_UPDATE',
     playersOnPad: 2,
-    message: 'BOTH PLAYERS DETECTED (2/2)! STARTING DUEL...'
+    message: 'BOTH PLAYERS ON PAD (2/2)! STARTING 1v1 DUEL...'
   });
 
   const p1 = clients.get(p1Id);
   const p2 = clients.get(p2Id);
 
-    if (p1 && p2 && p1.ws.readyState === p1.ws.OPEN && p2.ws.readyState === p2.ws.OPEN) {
-      const matchId = `match_${Date.now()}`;
-      p1.matchId = matchId;
-      p2.matchId = matchId;
-      p1.team = 'BLUE';
-      p2.team = 'RED';
-      p1.health = 100;
-      p2.health = 100;
+  if (p1 && p2 && p1.ws.readyState === p1.ws.OPEN && p2.ws.readyState === p2.ws.OPEN) {
+    const matchId = `match_${Date.now()}`;
+    p1.matchId = matchId;
+    p2.matchId = matchId;
+    p1.team = 'BLUE';
+    p2.team = 'RED';
+    p1.health = 100;
+    p2.health = 100;
 
-      const matchData = {
-        id: matchId,
-        p1: p1Id,
-        p2: p2Id,
-        state: 'MAP_VOTING',
-        votes: {}, // playerId -> mapName ('blockout' | 'poolday' | 'rooftop')
-        voteCounts: { blockout: 0, poolday: 0, rooftop: 0 },
-        timer: 10,
-        timerInterval: null,
-        roundNumber: 1,
-        maxScore: 3,
-        scores: {
-          [p1Id]: 0,
-          [p2Id]: 0
-        }
-      };
-      activeMatches.set(matchId, matchData);
+    const matchData = {
+      id: matchId,
+      p1: p1Id,
+      p2: p2Id,
+      state: 'MATCH_ACTIVE',
+      roundNumber: 1,
+      maxScore: 3,
+      scores: {
+        [p1Id]: 0,
+        [p2Id]: 0
+      }
+    };
+    activeMatches.set(matchId, matchData);
 
-      console.log(`[Matchmaking] 10-Second Map Voting started for ${p1Id} and ${p2Id}`);
+    console.log(`[1v1 Match] Started 1v1 duel: ${p1Id} (BLUE) vs ${p2Id} (RED) on Middle Platform!`);
 
-      // Start 10-second countdown timer on server
-      matchData.timerInterval = setInterval(() => {
-        matchData.timer--;
-        if (matchData.timer <= 0) {
-          clearInterval(matchData.timerInterval);
-          matchData.timerInterval = null;
-          if (matchData.state === 'MAP_VOTING') {
-            console.log(`[Vote] 10s voting window expired. Resolving map vote!`);
-            resolveMapVote(matchData);
-          }
-        }
-      }, 1000);
+    const startMsg1 = JSON.stringify({
+      type: 'MATCH_START_2P',
+      matchId: matchId,
+      opponentId: p2Id,
+      myTeam: 'BLUE',
+      opponentTeam: 'RED',
+      selectedMap: 'blockout',
+      maxScore: 3
+    });
+    const startMsg2 = JSON.stringify({
+      type: 'MATCH_START_2P',
+      matchId: matchId,
+      opponentId: p1Id,
+      myTeam: 'RED',
+      opponentTeam: 'BLUE',
+      selectedMap: 'blockout',
+      maxScore: 3
+    });
 
-      // Send MAP_VOTE_START to both players
-      const voteStartPayload1 = JSON.stringify({
-        type: 'MAP_VOTE_START',
-        matchId: matchId,
-        opponentId: p2Id,
-        myTeam: 'BLUE',
-        opponentTeam: 'RED',
-        duration: 10
-      });
-      const voteStartPayload2 = JSON.stringify({
-        type: 'MAP_VOTE_START',
-        matchId: matchId,
-        opponentId: p1Id,
-        myTeam: 'RED',
-        opponentTeam: 'BLUE',
-        duration: 10
-      });
-
-      p1.ws.send(voteStartPayload1);
-      p2.ws.send(voteStartPayload2);
-    }
+    p1.ws.send(startMsg1);
+    p2.ws.send(startMsg2);
+    broadcastQueueStatus();
+  }
 }
 
 // Resolves map vote: most voted wins; tie or 0 votes triggers random selection

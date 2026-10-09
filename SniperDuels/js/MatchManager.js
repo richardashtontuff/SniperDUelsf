@@ -130,22 +130,45 @@ export class MatchManager {
     }
 
     if (onAnyPad && currentSteppedPad) {
+      const mode = currentSteppedPad.userData.mode;
+
+      // 1. MIDDLE PLATFORM: 1v1 Human vs Human (NO BOT!)
+      if (mode === 'multiplayer_queue') {
+        if (!this.isOnQueuePad) {
+          this.isOnQueuePad = true;
+          this.activePad = currentSteppedPad;
+          if (this.mpClient) this.mpClient.stepOnQueuePad();
+          this.updateStateBanner('WAITING ON 1v1 PAD (1/2 READY) • STEP ON SIDE PADS FOR SOLO BOT', true, '#00ffcc');
+        }
+        return;
+      }
+
+      // 2. SIDE PLATFORMS: Solo Bot Duels
+      if (this.isOnQueuePad) {
+        this.isOnQueuePad = false;
+        if (this.mpClient) this.mpClient.stepOffQueuePad();
+      }
+
       if (this.activePad !== currentSteppedPad) {
         this.activePad = currentSteppedPad;
         this.padCountdown = 3.0;
-        const diff = (currentSteppedPad.userData.mode === 'hard') ? 'hard' : 'normal';
+        const diff = (mode === 'hard') ? 'hard' : 'casual';
         this.bot.setDifficulty(diff);
       }
 
       this.padCountdown -= delta;
       const sec = Math.max(1, Math.ceil(this.padCountdown));
-      const padLabel = currentSteppedPad.userData.label || '1v1 DUEL';
-      this.updateStateBanner(`DUEL STARTING IN ${sec}... (${padLabel})`, true, '#00ffcc');
+      const padLabel = (mode === 'hard') ? 'HARD BOT' : 'CASUAL BOT';
+      this.updateStateBanner(`SOLO BOT DUEL STARTING IN ${sec}... (${padLabel})`, true, '#00ffcc');
 
       if (this.padCountdown <= 0) {
         this.startSoloMatch();
       }
     } else {
+      if (this.isOnQueuePad) {
+        this.isOnQueuePad = false;
+        if (this.mpClient) this.mpClient.stepOffQueuePad();
+      }
       if (this.activePad) {
         this.activePad = null;
         this.updateStateBanner('LOBBY PRACTICE - STEP ON A DUEL PAD TO PLAY', true, '#ffffff');
