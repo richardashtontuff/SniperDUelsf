@@ -395,6 +395,13 @@ export class MultiplayerClient {
         this.currentMatchId = null;
         this.currentOpponentId = null;
 
+        if (this.voteInterval) {
+          clearInterval(this.voteInterval);
+          this.voteInterval = null;
+        }
+        const voteOverlay = document.getElementById('map-vote-overlay');
+        if (voteOverlay) voteOverlay.style.display = 'none';
+
         if (msg.scores) {
           this.game.matchManager.scorePlayer = msg.scores.blue;
           this.game.matchManager.scoreBot = msg.scores.red;

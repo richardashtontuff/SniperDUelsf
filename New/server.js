@@ -159,6 +159,10 @@ function handleConnection(ws) {
     // If player was in an active match, notify opponent
     if (playerObj.matchId && activeMatches.has(playerObj.matchId)) {
       const match = activeMatches.get(playerObj.matchId);
+      if (match && match.timerInterval) {
+        clearTimeout(match.timerInterval);
+        clearInterval(match.timerInterval);
+      }
       const opponentId = match.p1 === playerId ? match.p2 : match.p1;
       const opponent = clients.get(opponentId);
       if (opponent && opponent.ws.readyState === ws.OPEN) {
@@ -424,7 +428,10 @@ function handleClientMessage(senderId, data) {
     case 'MATCH_EXIT':
       if (player.matchId) {
         const m = activeMatches.get(player.matchId);
-        if (m && m.timerInterval) clearInterval(m.timerInterval);
+        if (m && m.timerInterval) {
+          clearTimeout(m.timerInterval);
+          clearInterval(m.timerInterval);
+        }
         activeMatches.delete(player.matchId);
         player.matchId = null;
       }
@@ -472,40 +479,45 @@ function checkMatchmakingQueue() {
       id: matchId,
       p1: p1Id,
       p2: p2Id,
-      state: 'MATCH_ACTIVE',
+      state: 'MAP_VOTING',
+      votes: {},
+      voteCounts: { blockout: 0, poolday: 0, rooftop: 0 },
       roundNumber: 1,
       maxScore: 3,
       scores: {
         [p1Id]: 0,
         [p2Id]: 0
-      }
+      },
+      timerInterval: null
     };
     activeMatches.set(matchId, matchData);
 
-    console.log(`[1v1 Match] Started 1v1 duel: ${p1Id} (BLUE) vs ${p2Id} (RED) on Middle Platform!`);
+    console.log(`[1v1 Match] Started 1v1 map vote: ${p1Id} (BLUE) vs ${p2Id} (RED) on Middle Platform!`);
 
-    const startMsg1 = JSON.stringify({
-      type: 'MATCH_START_2P',
+    const voteMsg1 = JSON.stringify({
+      type: 'MAP_VOTE_START',
       matchId: matchId,
       opponentId: p2Id,
       myTeam: 'BLUE',
       opponentTeam: 'RED',
-      selectedMap: 'blockout',
-      maxScore: 3
+      duration: 10
     });
-    const startMsg2 = JSON.stringify({
-      type: 'MATCH_START_2P',
+    const voteMsg2 = JSON.stringify({
+      type: 'MAP_VOTE_START',
       matchId: matchId,
       opponentId: p1Id,
       myTeam: 'RED',
       opponentTeam: 'BLUE',
-      selectedMap: 'blockout',
-      maxScore: 3
+      duration: 10
     });
 
-    p1.ws.send(startMsg1);
-    p2.ws.send(startMsg2);
+    p1.ws.send(voteMsg1);
+    p2.ws.send(voteMsg2);
     broadcastQueueStatus();
+
+    matchData.timerInterval = setTimeout(() => {
+      resolveMapVote(matchData);
+    }, 10000);
   }
 }
 
@@ -514,6 +526,7 @@ function resolveMapVote(match) {
   if (match.state !== 'MAP_VOTING') return;
   match.state = 'MATCH_ACTIVE';
   if (match.timerInterval) {
+    clearTimeout(match.timerInterval);
     clearInterval(match.timerInterval);
     match.timerInterval = null;
   }
