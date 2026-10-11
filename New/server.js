@@ -3,6 +3,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+
+// Catch any unhandled database or async errors so the server never crashes
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Server] Unhandled rejection notice:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.warn('[Server] Uncaught exception notice:', err.message);
+});
 let WebSocketServer = null;
 try {
   WebSocketServer = require('./vendor/ws').WebSocketServer;
@@ -68,6 +76,7 @@ if (isPostgres) {
     if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
       poolConfig = {
         connectionString: dbUrl,
+        connectionTimeoutMillis: 5000,
         ssl: (process.env.PGSSL === 'true' || dbUrl.includes('sslmode=require') || dbUrl.includes('ssl=true')) ? { rejectUnauthorized: false } : undefined
       };
     } else {
@@ -77,11 +86,16 @@ if (isPostgres) {
         password: dbPassword || '',
         database: dbName || 'sniper_duels',
         port: dbPort || 5432,
+        connectionTimeoutMillis: 5000,
         ssl: process.env.PGSSL === 'false' ? false : (process.env.NODE_ENV === 'production' && dbHost !== 'localhost' ? { rejectUnauthorized: false } : undefined)
       };
     }
 
     pgPool = new Pool(poolConfig);
+    pgPool.on('error', (err) => {
+      console.warn('[DB] PostgreSQL pool client notice (non-fatal):', err.message);
+    });
+
     console.log(`[DB] Connecting to PostgreSQL database at ${dbHost || dbUrl || 'localhost'} on Wasmer...`);
 
     // Auto-create users table in PostgreSQL
@@ -111,10 +125,14 @@ if (isPostgres) {
       port: process.env.MYSQL_PORT ? parseInt(process.env.MYSQL_PORT, 10) : 3306,
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0
+      queueLimit: 0,
+      connectTimeout: 5000
     };
 
     mysqlPool = mysql.createPool(poolOptions);
+    mysqlPool.on('error', (err) => {
+      console.warn('[DB] MySQL pool notice (non-fatal):', err.message);
+    });
     console.log('[DB] Connecting to MySQL database...');
 
     mysqlPool.query(`
