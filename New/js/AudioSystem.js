@@ -182,6 +182,69 @@ export class AudioSystem {
     this.playMetallicClick(3200, 2400, 0.05, 0.15);
   }
 
+  // --- GRENADE & EXPLOSION AUDIO ---
+
+  playGrenadePin() {
+    this.ensureContext();
+    this.playMetallicClick(2800, 1600, 0.06, 0.35);
+  }
+
+  playGrenadeBounce() {
+    this.ensureContext();
+    this.playMetallicClick(550, 220, 0.08, 0.4);
+  }
+
+  playExplosion() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    // 1. Deep Sub-Bass Shockwave Rumble (130Hz -> 25Hz)
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(130, now);
+    subOsc.frequency.exponentialRampToValueAtTime(25, now + 0.6);
+
+    subGain.gain.setValueAtTime(1.0, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.masterGain);
+    subOsc.start(now);
+    subOsc.stop(now + 1.3);
+
+    // 2. High Explosive Blast Noise & Pressure Wave
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.85);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.16));
+    }
+
+    const whiteNoise = this.ctx.createBufferSource();
+    whiteNoise.buffer = noiseBuffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1600, now);
+    filter.frequency.exponentialRampToValueAtTime(180, now + 0.6);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.85, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+
+    whiteNoise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain);
+    whiteNoise.start(now);
+
+    // 3. Shrapnel / Debris Clatter
+    setTimeout(() => {
+      this.playMetallicClick(1800, 400, 0.08, 0.35);
+    }, 110);
+  }
+
   // --- HITMARKERS & COMBAT FEEDBACK ---
 
   playHitmarker(isHeadshot = false) {

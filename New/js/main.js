@@ -10,6 +10,7 @@ import { BotAI } from './BotAI.js';
 import { CaseSystem } from './CaseSystem.js';
 import { MatchManager } from './MatchManager.js';
 import { MultiplayerClient } from './MultiplayerClient.js';
+import { AssetLoader } from './AssetLoader.js';
 
 class GameEngine {
   constructor() {
@@ -120,6 +121,11 @@ class GameEngine {
     this.matchManager.setMultiplayerClient(this.mpClient);
     this.matchManager.setWeaponSystem(this.weaponSystem);
 
+    // 11. Tactical Grenades & Aiming Trajectory
+    this.activeGrenades = [];
+    this.isAimingGrenade = false;
+    this.initGrenadeTrajectory();
+
     // Wire input events & combat
     this.setupEvents();
 
@@ -168,12 +174,34 @@ class GameEngine {
     // Weapon Switching hotkeys (1, 2, Q)
     this.controls.onSlotSwitch = (slot) => {
       this.weaponSystem.equipSlot(slot);
+      this.controls.currentWeaponSlot = this.weaponSystem.currentSlot;
       this.updateHUDWeapon();
     };
 
     this.controls.onQuickSwitch = () => {
       this.weaponSystem.quickSwitch();
+      this.controls.currentWeaponSlot = this.weaponSystem.currentSlot;
       this.updateHUDWeapon();
+    };
+
+    // Tactical Grenade Aim & Throw callbacks
+    this.controls.onGrenadeAim = (isAiming) => {
+      if (this.weaponSystem.currentSlot !== 'GRENADE') return;
+      this.isAimingGrenade = isAiming;
+      this.weaponSystem.isAimingThrow = isAiming;
+      if (this.trajectoryGroup) {
+        this.trajectoryGroup.visible = isAiming;
+      }
+    };
+
+    this.controls.onGrenadeThrow = () => {
+      if (this.weaponSystem.currentSlot !== 'GRENADE') return;
+      this.isAimingGrenade = false;
+      this.weaponSystem.isAimingThrow = false;
+      if (this.trajectoryGroup) {
+        this.trajectoryGroup.visible = false;
+      }
+      this.throwGrenade();
     };
 
     // Return to Lobby (L)
@@ -245,6 +273,29 @@ class GameEngine {
         handler(e);
       });
     };
+
+    // Weapon Selector Chips
+    const slotChips = document.querySelectorAll('.slot-chip');
+    slotChips.forEach(chip => {
+      bindAction(chip, () => {
+        const slot = chip.getAttribute('data-slot');
+        if (slot) {
+          this.weaponSystem.equipSlot(slot);
+          this.controls.currentWeaponSlot = this.weaponSystem.currentSlot;
+          this.updateHUDWeapon();
+        }
+      });
+    });
+
+    // Weapon card tap to quick-switch
+    const weaponCard = document.querySelector('.weapon-card');
+    if (weaponCard) {
+      bindAction(weaponCard, () => {
+        this.weaponSystem.quickSwitch();
+        this.controls.currentWeaponSlot = this.weaponSystem.currentSlot;
+        this.updateHUDWeapon();
+      });
+    }
 
     // UI Buttons (Shop, Maps, Settings)
     const shopBtn = document.getElementById('shop-open-btn');
@@ -396,6 +447,11 @@ class GameEngine {
     if (this.caseSystem.isUnboxing) return;
     // Lock shooting outside of active gameplay (cannot shoot during intermission, warmup, or victory)
     if (this.matchManager.state !== 'LOBBY' && this.matchManager.state !== 'ROUND_ACTIVE') {
+      return;
+    }
+
+    if (this.weaponSystem.currentSlot === 'GRENADE') {
+      this.throwGrenade();
       return;
     }
 
@@ -553,6 +609,323 @@ class GameEngine {
     }
   }
 
+  // ==========================================
+  // TACTICAL GRENADE SYSTEM & TRAJECTORY AIMING
+  // ==========================================
+
+  initGrenadeTrajectory() {
+    this.trajectoryGroup = new THREE.Group();
+    this.trajectoryGroup.visible = false;
+
+    // Glowing trajectory beads (dotted parabolic arc)
+    this.trajectoryDots = [];
+    const dotGeo = new THREE.SphereGeometry(0.065, 8, 8);
+    const dotMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.85
+    });
+
+    for (let i = 0; i < 32; i++) {
+      const dot = new THREE.Mesh(dotGeo, dotMat.clone());
+      dot.material.opacity = Math.max(0.2, 1.0 - (i / 32) * 0.7);
+      this.trajectoryGroup.add(dot);
+      this.trajectoryDots.push(dot);
+    }
+
+    // Impact / Landing Ring Decal
+    const ringGeo = new THREE.RingGeometry(0.35, 0.52, 28);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending
+    });
+    this.trajectoryLandingRing = new THREE.Mesh(ringGeo, ringMat);
+    this.trajectoryGroup.add(this.trajectoryLandingRing);
+
+    this.worldScene.add(this.trajectoryGroup);
+  }
+
+  updateGrenadeTrajectory() {
+    if (!this.isAimingGrenade || !this.trajectoryGroup || !this.trajectoryGroup.visible) return;
+
+    const shootRay = this.controls.getShootRay();
+    const forward = shootRay.direction.clone();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.cameraManager.worldCamera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0);
+
+    // Launch origin & velocity
+    const origin = shootRay.origin.clone().addScaledVector(forward, 0.35).addScaledVector(right, 0.15).addScaledVector(up, -0.08);
+    const velocity = forward.clone().multiplyScalar(22.0).add(new THREE.Vector3(0, 4.5, 0));
+    const gravity = new THREE.Vector3(0, -20.0, 0);
+
+    const dt = 0.038;
+    let currentPos = origin.clone();
+    let currentVel = velocity.clone();
+
+    if (!this.trajRaycaster) this.trajRaycaster = new THREE.Raycaster();
+    const colliders = this.map.colliders.map(c => c.mesh);
+    let hitFound = false;
+    let hitPoint = null;
+    let hitNormal = new THREE.Vector3(0, 1, 0);
+
+    for (let i = 0; i < this.trajectoryDots.length; i++) {
+      const dot = this.trajectoryDots[i];
+      if (hitFound) {
+        dot.visible = false;
+        continue;
+      }
+
+      const nextPos = currentPos.clone().addScaledVector(currentVel, dt);
+      currentVel.addScaledVector(gravity, dt);
+
+      // Check collision between currentPos and nextPos
+      const segDir = nextPos.clone().sub(currentPos);
+      const segDist = segDir.length();
+      if (segDist > 0.001) {
+        this.trajRaycaster.set(currentPos, segDir.clone().normalize());
+        this.trajRaycaster.far = segDist;
+        const hits = this.trajRaycaster.intersectObjects(colliders, false);
+        if (hits.length > 0) {
+          hitFound = true;
+          hitPoint = hits[0].point;
+          if (hits[0].face) {
+            hitNormal = hits[0].face.normal.clone();
+            hitNormal.transformDirection(hits[0].object.matrixWorld);
+          }
+          nextPos.copy(hitPoint);
+        } else if (nextPos.y <= 0.5) {
+          // Floor check
+          hitFound = true;
+          hitPoint = new THREE.Vector3(nextPos.x, 0.52, nextPos.z);
+          hitNormal = new THREE.Vector3(0, 1, 0);
+          nextPos.copy(hitPoint);
+        }
+      }
+
+      dot.position.copy(nextPos);
+      dot.visible = true;
+      currentPos.copy(nextPos);
+    }
+
+    if (hitFound && hitPoint) {
+      this.trajectoryLandingRing.visible = true;
+      this.trajectoryLandingRing.position.copy(hitPoint).addScaledVector(hitNormal, 0.02);
+      this.trajectoryLandingRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
+      const pulse = 1.0 + Math.sin(Date.now() * 0.008) * 0.15;
+      this.trajectoryLandingRing.scale.set(pulse, pulse, pulse);
+    } else {
+      this.trajectoryLandingRing.visible = false;
+    }
+  }
+
+  throwGrenade() {
+    if (this.weaponSystem.currentSlot !== 'GRENADE') return;
+    if (this.weaponSystem.grenades <= 0) return;
+
+    this.weaponSystem.grenades--;
+    this.weaponSystem.isThrowingGrenade = true;
+    this.weaponSystem.throwAnimTimer = 0;
+    this.updateHUDWeapon();
+
+    const shootRay = this.controls.getShootRay();
+    const forward = shootRay.direction.clone();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.cameraManager.worldCamera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0);
+
+    const origin = shootRay.origin.clone().addScaledVector(forward, 0.4).addScaledVector(right, 0.15).addScaledVector(up, -0.08);
+    const velocity = forward.clone().multiplyScalar(22.0).add(new THREE.Vector3(0, 4.5, 0));
+
+    this.audio.playGrenadePin();
+    this.audio.playKnifeSlash();
+
+    const mesh = AssetLoader.createProceduralGrenade();
+    mesh.position.copy(origin);
+    mesh.scale.set(2.0, 2.0, 2.0);
+
+    const fuseLight = new THREE.PointLight(0xff7700, 3.5, 8);
+    fuseLight.position.set(0, 0.1, 0);
+    mesh.add(fuseLight);
+
+    this.worldScene.add(mesh);
+
+    this.activeGrenades.push({
+      mesh: mesh,
+      fuseLight: fuseLight,
+      position: origin.clone(),
+      velocity: velocity.clone(),
+      rotVel: new THREE.Vector3(
+        (Math.random() - 0.5) * 12 + 6,
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 6
+      ),
+      fuse: 2.0,
+      bounces: 0
+    });
+
+    // In lobby practice, replenish grenade after 4 seconds
+    if (this.matchManager.state === 'LOBBY') {
+      setTimeout(() => {
+        if (this.weaponSystem.grenades < this.weaponSystem.maxGrenades) {
+          this.weaponSystem.grenades = this.weaponSystem.maxGrenades;
+          if (this.weaponSystem.currentSlot === 'GRENADE' && this.weaponSystem.grenadeMesh) {
+            this.weaponSystem.grenadeMesh.visible = true;
+          }
+          this.updateHUDWeapon();
+        }
+      }, 4000);
+    }
+  }
+
+  updateActiveGrenades(delta) {
+    if (!this.grenadeRaycaster) this.grenadeRaycaster = new THREE.Raycaster();
+    const colliders = this.map.colliders.map(c => c.mesh);
+
+    for (let i = this.activeGrenades.length - 1; i >= 0; i--) {
+      const g = this.activeGrenades[i];
+      g.fuse -= delta;
+
+      // Gravity
+      g.velocity.y -= 20.0 * delta;
+
+      const step = g.velocity.clone().multiplyScalar(delta);
+      const stepDist = step.length();
+
+      if (stepDist > 0.001) {
+        this.grenadeRaycaster.set(g.position, step.clone().normalize());
+        this.grenadeRaycaster.far = stepDist + 0.1;
+        const hits = this.grenadeRaycaster.intersectObjects(colliders, false);
+
+        if (hits.length > 0) {
+          const hit = hits[0];
+          g.position.copy(hit.point);
+          const normal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
+
+          // Reflect velocity with restitution
+          g.velocity.reflect(normal).multiplyScalar(0.42);
+          g.rotVel.multiplyScalar(0.7);
+          g.bounces++;
+          if (g.velocity.length() > 2.0) {
+            this.audio.playGrenadeBounce();
+          }
+        } else if (g.position.y + step.y <= 0.6) {
+          // Floor bounce
+          g.position.y = 0.6;
+          g.position.x += step.x;
+          g.position.z += step.z;
+          g.velocity.y = Math.abs(g.velocity.y) * 0.4;
+          g.velocity.x *= 0.72;
+          g.velocity.z *= 0.72;
+          g.rotVel.multiplyScalar(0.65);
+          g.bounces++;
+          if (Math.abs(g.velocity.y) > 1.5) {
+            this.audio.playGrenadeBounce();
+          }
+        } else {
+          g.position.add(step);
+        }
+      }
+
+      g.mesh.position.copy(g.position);
+      g.mesh.rotation.x += g.rotVel.x * delta;
+      g.mesh.rotation.y += g.rotVel.y * delta;
+      g.mesh.rotation.z += g.rotVel.z * delta;
+
+      // Detonate when fuse expires
+      if (g.fuse <= 0) {
+        this.detonateGrenade(g.position);
+        this.worldScene.remove(g.mesh);
+        g.mesh.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+        this.activeGrenades.splice(i, 1);
+      }
+    }
+  }
+
+  // Tactical Grenade Blast: 150 damage max with linear falloff to 25 min at 8.0m
+  detonateGrenade(pos) {
+    // 1. Audio & Visual Explosion FX
+    this.particles.addExplosion(pos);
+    this.audio.playExplosion();
+
+    // 2. Proximity Camera Shake
+    const playerPos = this.controls.getPosition();
+    const playerDist = playerPos.distanceTo(pos);
+    if (playerDist < 22.0) {
+      const shakeFactor = Math.max(0, 1.0 - (playerDist / 22.0));
+      this.controls.addCameraShake(shakeFactor * 0.55);
+    }
+
+    // Damage calculator: 150 max at <= 1.5m, linear falloff to 25 min at 8.0m, 0 beyond 8.0m
+    const calculateDamage = (dist) => {
+      if (dist <= 1.5) return 150;
+      if (dist > 8.0) return 0;
+      const t = (dist - 1.5) / (8.0 - 1.5);
+      return Math.round(150 - t * (150 - 25));
+    };
+
+    // 3. Bot Opponent (Solo Matches)
+    if (this.bot && this.bot.isAlive) {
+      const bDist = this.bot.position.distanceTo(pos);
+      if (bDist <= 8.0) {
+        const damage = calculateDamage(bDist);
+        this.bot.takeDamage(damage);
+        const isLethal = damage >= 100 || !this.bot.isAlive;
+        this.audio.playHitmarker(isLethal);
+        this.matchManager.showHitmarker(isLethal);
+        this.matchManager.showDamageNumber(damage, isLethal);
+      }
+    }
+
+    // 4. Remote Opponent (2-Player 1v1 Matches)
+    if (this.matchManager.isTwoPlayer && this.matchManager.state === 'ROUND_ACTIVE' && this.mpClient) {
+      const oppId = this.matchManager.opponentId;
+      if (oppId && this.mpClient.remotePlayers.has(oppId)) {
+        const opp = this.mpClient.remotePlayers.get(oppId);
+        const oppPos = opp.group ? opp.group.position : null;
+        if (oppPos) {
+          const oppDist = oppPos.distanceTo(pos);
+          if (oppDist <= 8.0) {
+            const damage = calculateDamage(oppDist);
+            this.mpClient.sendInflictDamage(oppId, damage, false);
+            this.audio.playHitmarker(damage >= 100);
+            this.matchManager.showHitmarker(damage >= 100);
+            this.matchManager.showDamageNumber(damage, damage >= 100);
+          }
+        }
+      }
+    }
+
+    // 5. Target Dummies in Lobby Range
+    this.map.targetDummies.forEach(d => {
+      if (!d.userData.isKnockedDown) {
+        const dDist = d.position.distanceTo(pos);
+        if (dDist <= 8.0) {
+          const damage = calculateDamage(dDist);
+          this.audio.playHitmarker(false);
+          this.matchManager.showHitmarker(false);
+          this.matchManager.showDamageNumber(damage, false);
+          this.map.hitTarget(d, false);
+        }
+      }
+    });
+
+    // 6. Local Player Self-Damage (in active round)
+    if (this.matchManager.state === 'ROUND_ACTIVE') {
+      if (playerDist <= 8.0) {
+        const selfDmg = Math.round(calculateDamage(playerDist) * 0.7);
+        if (selfDmg > 0) {
+          this.matchManager.onPlayerDamaged(selfDmg, false);
+        }
+      }
+    }
+  }
+
   updateHUDWeapon() {
     const ammoCount = document.getElementById('ammo-count');
     const scopeAmmo = document.getElementById('scope-ammo-val');
@@ -562,8 +935,10 @@ class GameEngine {
     if (ammoCount) {
       if (this.weaponSystem.currentSlot === 'SNIPER') {
         ammoCount.textContent = `${this.weaponSystem.ammo} / ${this.weaponSystem.maxAmmo}`;
-      } else {
+      } else if (this.weaponSystem.currentSlot === 'KNIFE') {
         ammoCount.textContent = '∞';
+      } else if (this.weaponSystem.currentSlot === 'GRENADE') {
+        ammoCount.textContent = `${this.weaponSystem.grenades} / 1`;
       }
     }
 
@@ -572,8 +947,44 @@ class GameEngine {
     }
 
     if (slotName) {
-      slotName.textContent = this.weaponSystem.currentSlot === 'SNIPER' ? 'AWP BOLT-ACTION' : 'TACTICAL KNIFE';
+      if (this.weaponSystem.currentSlot === 'SNIPER') {
+        slotName.textContent = 'AWP BOLT-ACTION';
+      } else if (this.weaponSystem.currentSlot === 'KNIFE') {
+        slotName.textContent = 'TACTICAL KNIFE';
+      } else if (this.weaponSystem.currentSlot === 'GRENADE') {
+        slotName.textContent = 'M67 FRAG GRENADE';
+      }
     }
+
+    // Sync current slot to Controls
+    if (this.controls) {
+      this.controls.currentWeaponSlot = this.weaponSystem.currentSlot;
+    }
+
+    // Update Mobile SWAP button icon & label
+    const switchBtn = document.getElementById('m-btn-switch');
+    if (switchBtn) {
+      const icon = switchBtn.querySelector('.btn-icon');
+      const label = switchBtn.querySelector('.btn-label');
+      if (this.weaponSystem.currentSlot === 'SNIPER') {
+        if (icon) icon.textContent = '🗡️';
+        if (label) label.textContent = 'KNIFE';
+      } else if (this.weaponSystem.currentSlot === 'KNIFE') {
+        if (icon) icon.textContent = '💣';
+        if (label) label.textContent = 'GRENADE';
+      } else if (this.weaponSystem.currentSlot === 'GRENADE') {
+        if (icon) icon.textContent = '🔫';
+        if (label) label.textContent = 'AWP';
+      }
+    }
+
+    // Update Weapon Selector Chips
+    ['SNIPER', 'KNIFE', 'GRENADE'].forEach(slot => {
+      const chip = document.getElementById(`slot-chip-${slot.toLowerCase()}`);
+      if (chip) {
+        chip.classList.toggle('active', this.weaponSystem.currentSlot === slot);
+      }
+    });
 
     if (boltNotice) {
       if (this.weaponSystem.isBolting) {
@@ -590,8 +1001,8 @@ class GameEngine {
     // Dynamic Crosshair Spread
     const crosshair = document.getElementById('crosshair');
     if (crosshair) {
-      if (this.weaponSystem.adsProgress > 0.7) {
-        crosshair.style.opacity = '0'; // Hide crosshair in ADS (scope overlay takes over)
+      if (this.weaponSystem.adsProgress > 0.7 || this.isAimingGrenade) {
+        crosshair.style.opacity = '0'; // Hide crosshair in ADS or Grenade Trajectory Aim
       } else {
         crosshair.style.opacity = '1';
         const spreadPx = 14 + (this.weaponSystem.getSpread(true) * 120);
@@ -628,10 +1039,14 @@ class GameEngine {
     // 6. Update Match State Machine ("First to 6 Wins", Duel Pads, Bot AI)
     this.matchManager.update(delta);
 
-    // 7. Update HUD dynamic indicators
+    // 7. Update Active Thrown Grenades & Aiming Trajectory
+    this.updateActiveGrenades(delta);
+    this.updateGrenadeTrajectory();
+
+    // 8. Update HUD dynamic indicators
     this.updateHUDWeapon();
 
-    // 8. Dual-Pass Render (World Scene + No-Clip Viewmodel)
+    // 9. Dual-Pass Render (World Scene + No-Clip Viewmodel)
     this.cameraManager.render(this.worldScene, this.weaponSystem.vmScene);
   }
 }

@@ -57,6 +57,18 @@ export class WeaponSystem {
     this.knifeRestPos = new THREE.Vector3(0.26, -0.24, -0.42);
     this.knifeRestRot = new THREE.Euler(0.2, 0.4, -0.3);
 
+    // Grenade Viewmodel Rest & Aim Positions
+    this.grenadeRestPos = new THREE.Vector3(0.22, -0.22, -0.38);
+    this.grenadeRestRot = new THREE.Euler(0.2, 0.4, -0.2);
+    this.grenadeAimPos = new THREE.Vector3(0.14, -0.14, -0.30);
+    this.grenadeAimRot = new THREE.Euler(0.35, 0.6, -0.12);
+
+    this.grenades = 1;
+    this.maxGrenades = 1;
+    this.isAimingThrow = false;
+    this.isThrowingGrenade = false;
+    this.throwAnimTimer = 0;
+
     // Build 3D Models
     this.buildWeapons();
     this.equipSlot('SNIPER', true);
@@ -75,9 +87,17 @@ export class WeaponSystem {
     this.knifeMesh.rotation.copy(this.knifeRestRot);
     this.knifeMesh.visible = false;
     this.vmRoot.add(this.knifeMesh);
+
+    // 3. Grenade Viewmodel
+    this.grenadeMesh = AssetLoader.createProceduralGrenade();
+    this.grenadeMesh.position.copy(this.grenadeRestPos);
+    this.grenadeMesh.rotation.copy(this.grenadeRestRot);
+    this.grenadeMesh.scale.set(1.4, 1.4, 1.4);
+    this.grenadeMesh.visible = false;
+    this.vmRoot.add(this.grenadeMesh);
   }
 
-  // Equips weapon slot ('SNIPER' or 'KNIFE')
+  // Equips weapon slot ('SNIPER', 'KNIFE', or 'GRENADE')
   equipSlot(slot, instant = false) {
     if (this.currentSlot === slot && !instant) return;
     if (this.isReloading) this.isReloading = false;
@@ -86,19 +106,34 @@ export class WeaponSystem {
     this.lastSlot = this.currentSlot;
     this.currentSlot = slot;
     this.isInspecting = false;
+    this.isAimingThrow = false;
 
     if (slot === 'SNIPER') {
       this.sniperMesh.visible = true;
       this.knifeMesh.visible = false;
-    } else {
+      this.grenadeMesh.visible = false;
+    } else if (slot === 'KNIFE') {
       this.sniperMesh.visible = false;
       this.knifeMesh.visible = true;
+      this.grenadeMesh.visible = false;
       this.audio.playKnifeSlash();
+    } else if (slot === 'GRENADE') {
+      this.sniperMesh.visible = false;
+      this.knifeMesh.visible = false;
+      this.grenadeMesh.visible = true;
+      this.audio.playGrenadePin();
     }
   }
 
   quickSwitch() {
-    const nextSlot = this.currentSlot === 'SNIPER' ? 'KNIFE' : 'SNIPER';
+    let nextSlot = 'SNIPER';
+    if (this.currentSlot === 'SNIPER') {
+      nextSlot = 'KNIFE';
+    } else if (this.currentSlot === 'KNIFE') {
+      nextSlot = 'GRENADE';
+    } else {
+      nextSlot = 'SNIPER';
+    }
     this.equipSlot(nextSlot);
   }
 
@@ -138,6 +173,10 @@ export class WeaponSystem {
   }
 
   shoot() {
+    if (this.currentSlot === 'GRENADE') {
+      return { fired: true, type: 'GRENADE' };
+    }
+
     if (this.currentSlot === 'KNIFE') {
       this.slashKnife();
       return { fired: true, type: 'KNIFE' };
@@ -205,6 +244,9 @@ export class WeaponSystem {
   getSpeedModifier() {
     if (this.currentSlot === 'KNIFE') {
       return 1.32; // Iconic Roblox knife rush boost
+    }
+    if (this.currentSlot === 'GRENADE') {
+      return 1.15; // Tactical light explosive sprint
     }
     if (this.isAiming) {
       return 0.55; // Slower walking while scoped in
@@ -371,7 +413,7 @@ export class WeaponSystem {
       }
 
       this.sniperMesh.rotation.copy(targetRot);
-    } else {
+    } else if (this.currentSlot === 'KNIFE') {
       // KNIFE VIEWMODEL
       const pos = this.knifeRestPos.clone();
       pos.x += this.swayCurrent.x + bobX;
@@ -393,12 +435,63 @@ export class WeaponSystem {
       }
 
       this.knifeMesh.rotation.copy(rot);
+    } else if (this.currentSlot === 'GRENADE') {
+      // GRENADE VIEWMODEL
+      if (!this.grenadeMesh) return;
+
+      const restP = this.grenadeRestPos;
+      const aimP = this.grenadeAimPos;
+      const targetPos = this.isAimingThrow ? aimP.clone() : restP.clone();
+      targetPos.x += this.swayCurrent.x + bobX;
+      targetPos.y += this.swayCurrent.y + bobY;
+
+      if (this.isThrowingGrenade) {
+        this.throwAnimTimer += delta;
+        // Cock back then launch forward
+        const t = this.throwAnimTimer / 0.35;
+        if (t < 0.3) {
+          targetPos.z -= t * 0.3;
+          targetPos.y += t * 0.2;
+        } else if (t < 0.7) {
+          targetPos.z += (t - 0.3) * 0.8;
+          targetPos.y -= (t - 0.3) * 0.4;
+        } else {
+          this.grenadeMesh.visible = false;
+        }
+        if (this.throwAnimTimer >= 0.75) {
+          this.isThrowingGrenade = false;
+          this.throwAnimTimer = 0;
+          if (this.currentSlot === 'GRENADE') {
+            this.grenadeMesh.visible = true;
+          }
+        }
+      }
+
+      this.grenadeMesh.position.lerp(targetPos, Math.min(1, delta * 14));
+
+      const restR = this.grenadeRestRot;
+      const aimR = this.grenadeAimRot;
+      const targetRot = this.isAimingThrow ? aimR.clone() : restR.clone();
+      targetRot.y += this.swayCurrent.x * 2.5;
+      if (this.isAimingThrow) {
+        targetRot.x += Math.sin(Date.now() * 0.005) * 0.04;
+      }
+      this.grenadeMesh.rotation.x = THREE.MathUtils.lerp(this.grenadeMesh.rotation.x, targetRot.x, Math.min(1, delta * 12));
+      this.grenadeMesh.rotation.y = THREE.MathUtils.lerp(this.grenadeMesh.rotation.y, targetRot.y, Math.min(1, delta * 12));
+      this.grenadeMesh.rotation.z = THREE.MathUtils.lerp(this.grenadeMesh.rotation.z, targetRot.z, Math.min(1, delta * 12));
     }
   }
 
   // Reset all weapon states, timers, and reload on death / round restart
   resetStats() {
     this.ammo = this.maxAmmo;
+    this.grenades = this.maxGrenades;
+    this.isAimingThrow = false;
+    this.isThrowingGrenade = false;
+    this.throwAnimTimer = 0;
+    if (this.grenadeMesh && this.currentSlot === 'GRENADE') {
+      this.grenadeMesh.visible = true;
+    }
     this.isBolting = false;
     this.isCyclingBolt = false;
     this.boltTimer = 0;

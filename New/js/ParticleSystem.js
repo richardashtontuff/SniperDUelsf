@@ -8,6 +8,7 @@ export class ParticleSystem {
     this.sparks = [];
     this.shells = [];
     this.confetti = [];
+    this.explosions = [];
 
     this.sparkGeo = new THREE.BufferGeometry();
     const sparkPositions = new Float32Array([0, 0, 0]);
@@ -137,6 +138,109 @@ export class ParticleSystem {
     });
   }
 
+  // Tactical Grenade High-Explosive Detonation FX (Shockwave, fiery fireballs, smoke & debris)
+  addExplosion(center) {
+    const explosionGroup = new THREE.Group();
+    explosionGroup.position.copy(center);
+
+    // 1. Expanding Ground Shockwave Ring
+    const ringGeo = new THREE.RingGeometry(0.2, 0.45, 24);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xffaa33,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending
+    });
+    const shockwaveMesh = new THREE.Mesh(ringGeo, ringMat);
+    shockwaveMesh.position.copy(center);
+    shockwaveMesh.position.y += 0.05;
+    this.scene.add(shockwaveMesh);
+
+    // 2. Central Fireball Flash
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffeedd,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending
+    });
+    const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10), flashMat);
+    flashMesh.position.copy(center);
+    this.scene.add(flashMesh);
+
+    // 3. Fiery Explosion Sparks & Shrapnel
+    const sparkItems = [];
+    for (let i = 0; i < 36; i++) {
+      const pMat = new THREE.PointsMaterial({
+        color: [0xff3300, 0xff7700, 0xffcc00, 0xffffff][Math.floor(Math.random() * 4)],
+        size: 0.14 + Math.random() * 0.12,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending
+      });
+      const spark = new THREE.Points(this.sparkGeo.clone(), pMat);
+      spark.position.copy(center);
+
+      const phi = Math.random() * Math.PI * 2;
+      const theta = Math.random() * Math.PI * 0.5; // Upward hemisphere
+      const speed = 7.0 + Math.random() * 14.0;
+      const vel = new THREE.Vector3(
+        Math.cos(phi) * Math.sin(theta) * speed,
+        Math.cos(theta) * speed + 3.0,
+        Math.sin(phi) * Math.sin(theta) * speed
+      );
+
+      this.scene.add(spark);
+      sparkItems.push({
+        mesh: spark,
+        vel: vel,
+        life: 0.45 + Math.random() * 0.35,
+        maxLife: 0.8
+      });
+    }
+
+    // 4. Billowing Smoke Puffs
+    const smokeItems = [];
+    for (let i = 0; i < 12; i++) {
+      const sMat = new THREE.MeshStandardMaterial({
+        color: 0x222222,
+        roughness: 0.9,
+        transparent: true,
+        opacity: 0.7
+      });
+      const smokeMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.3, 1), sMat);
+      smokeMesh.position.copy(center).add(new THREE.Vector3(
+        (Math.random() - 0.5) * 0.6,
+        Math.random() * 0.5,
+        (Math.random() - 0.5) * 0.6
+      ));
+      this.scene.add(smokeMesh);
+
+      smokeItems.push({
+        mesh: smokeMesh,
+        vel: new THREE.Vector3(
+          (Math.random() - 0.5) * 2.5,
+          1.5 + Math.random() * 2.5,
+          (Math.random() - 0.5) * 2.5
+        ),
+        rotVel: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
+        life: 0.9 + Math.random() * 0.5,
+        maxLife: 1.4,
+        baseScale: 1.0
+      });
+    }
+
+    this.explosions.push({
+      shockwave: shockwaveMesh,
+      flash: flashMesh,
+      sparks: sparkItems,
+      smoke: smokeItems,
+      life: 1.5,
+      maxLife: 1.5
+    });
+  }
+
   // Confetti explosion on match victory
   spawnVictoryConfetti(origin) {
     const colors = [0xff0055, 0x00d2ff, 0xffd200, 0x00ff88, 0xff7700, 0xaa00ff];
@@ -249,6 +353,76 @@ export class ParticleSystem {
         c.mesh.geometry.dispose();
         c.mesh.material.dispose();
         this.confetti.splice(i, 1);
+      }
+    }
+
+    // 5. Update explosions (Shockwave, flash, fireball sparks, smoke)
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const exp = this.explosions[i];
+      exp.life -= delta;
+      const progress = 1.0 - (exp.life / exp.maxLife);
+
+      // Expand shockwave
+      if (exp.shockwave) {
+        const ringScale = 1.0 + progress * 16.0;
+        exp.shockwave.scale.set(ringScale, ringScale, 1.0);
+        exp.shockwave.material.opacity = Math.max(0, (1.0 - progress) * 0.95);
+        if (progress >= 1.0) {
+          this.scene.remove(exp.shockwave);
+          exp.shockwave.geometry.dispose();
+          exp.shockwave.material.dispose();
+          exp.shockwave = null;
+        }
+      }
+
+      // Flash decay
+      if (exp.flash) {
+        const flashScale = 1.0 + progress * 6.0;
+        exp.flash.scale.set(flashScale, flashScale, flashScale);
+        exp.flash.material.opacity = Math.max(0, 1.0 - progress * 4.0);
+        if (progress >= 0.25) {
+          this.scene.remove(exp.flash);
+          exp.flash.geometry.dispose();
+          exp.flash.material.dispose();
+          exp.flash = null;
+        }
+      }
+
+      // Explosion sparks
+      for (let j = exp.sparks.length - 1; j >= 0; j--) {
+        const sp = exp.sparks[j];
+        sp.life -= delta;
+        sp.mesh.position.addScaledVector(sp.vel, delta);
+        sp.vel.y -= 15.0 * delta; // Gravity
+        sp.mesh.material.opacity = Math.max(0, sp.life / sp.maxLife);
+        if (sp.life <= 0) {
+          this.scene.remove(sp.mesh);
+          sp.mesh.material.dispose();
+          exp.sparks.splice(j, 1);
+        }
+      }
+
+      // Smoke puffs
+      for (let k = exp.smoke.length - 1; k >= 0; k--) {
+        const sm = exp.smoke[k];
+        sm.life -= delta;
+        sm.mesh.position.addScaledVector(sm.vel, delta);
+        sm.mesh.rotation.x += sm.rotVel.x * delta;
+        sm.mesh.rotation.y += sm.rotVel.y * delta;
+        const smProg = 1.0 - (sm.life / sm.maxLife);
+        const smScale = 1.0 + smProg * 2.5;
+        sm.mesh.scale.set(smScale, smScale, smScale);
+        sm.mesh.material.opacity = Math.max(0, (sm.life / sm.maxLife) * 0.65);
+        if (sm.life <= 0) {
+          this.scene.remove(sm.mesh);
+          sm.mesh.geometry.dispose();
+          sm.mesh.material.dispose();
+          exp.smoke.splice(k, 1);
+        }
+      }
+
+      if (exp.life <= 0) {
+        this.explosions.splice(i, 1);
       }
     }
   }

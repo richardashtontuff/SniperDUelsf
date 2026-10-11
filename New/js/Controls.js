@@ -24,6 +24,11 @@ export class FPSControls {
     this.yaw = 0;
     this.mouseSensitivity = 0.0022;
 
+    // Grenade & Weapon slot tracking
+    this.currentWeaponSlot = 'SNIPER';
+    this.isHoldingGrenade = false;
+    this.shakeAmount = 0;
+
     // Movement Physics
     this.velocity = new THREE.Vector3();
     this.moveInput = { forward: false, backward: false, left: false, right: false };
@@ -192,8 +197,12 @@ export class FPSControls {
         this.requestPointerLock();
       }
 
-      // Right click with mouse -> Aim Down Sights (ADS)
-      if (e.button === 2 && this.onADS) {
+      // Holding to aim Grenade trajectory
+      if (this.currentWeaponSlot === 'GRENADE') {
+        this.isHoldingGrenade = true;
+        if (this.onGrenadeAim) this.onGrenadeAim(true);
+      } else if (e.button === 2 && this.onADS) {
+        // Right click with mouse -> Aim Down Sights (ADS)
         this.onADS(true);
       }
 
@@ -228,6 +237,12 @@ export class FPSControls {
     });
 
     window.addEventListener('pointerup', (e) => {
+      if (this.isHoldingGrenade) {
+        this.isHoldingGrenade = false;
+        if (this.onGrenadeAim) this.onGrenadeAim(false);
+        if (this.onGrenadeThrow) this.onGrenadeThrow();
+      }
+
       if (this.isDragging && (this.dragPointerId === e.pointerId || e.pointerType === 'mouse')) {
         this.isDragging = false;
         this.dragPointerId = null;
@@ -238,13 +253,17 @@ export class FPSControls {
         }
 
         // Left click with minimal drag (< 6px) triggers weapon shoot
-        if (this.dragButton === 0 && this.dragDistance < 6 && this.onShoot) {
+        if (this.dragButton === 0 && this.dragDistance < 6 && this.currentWeaponSlot !== 'GRENADE' && this.onShoot) {
           this.onShoot();
         }
       }
     });
 
     window.addEventListener('pointercancel', (e) => {
+      if (this.isHoldingGrenade) {
+        this.isHoldingGrenade = false;
+        if (this.onGrenadeAim) this.onGrenadeAim(false);
+      }
       if (this.dragPointerId === e.pointerId) {
         this.isDragging = false;
         this.dragPointerId = null;
@@ -254,6 +273,15 @@ export class FPSControls {
     // When pointer lock is active, handle direct mousedown/up for shooting and scoping
     window.addEventListener('mousedown', (e) => {
       if (!this.isGameActive || !this.isLocked) return;
+
+      if (this.currentWeaponSlot === 'GRENADE') {
+        if (e.button === 0) {
+          this.isHoldingGrenade = true;
+          if (this.onGrenadeAim) this.onGrenadeAim(true);
+        }
+        return;
+      }
+
       if (e.button === 0 && this.onShoot) {
         this.onShoot();
       } else if (e.button === 2 && this.onADS) {
@@ -263,6 +291,16 @@ export class FPSControls {
 
     window.addEventListener('mouseup', (e) => {
       if (!this.isGameActive || !this.isLocked) return;
+
+      if (this.currentWeaponSlot === 'GRENADE' && e.button === 0) {
+        if (this.isHoldingGrenade) {
+          this.isHoldingGrenade = false;
+          if (this.onGrenadeAim) this.onGrenadeAim(false);
+          if (this.onGrenadeThrow) this.onGrenadeThrow();
+        }
+        return;
+      }
+
       if (e.button === 2 && this.onADS) {
         this.onADS(false);
       }
@@ -390,10 +428,35 @@ export class FPSControls {
       });
     };
 
-    // Fire Button
-    bindTouchBtn('m-btn-fire', () => {
-      if (this.onShoot) this.onShoot();
-    });
+    // Fire Button (with Grenade hold-to-aim support)
+    const fireBtn = document.getElementById('m-btn-fire');
+    if (fireBtn) {
+      const handleFireStart = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.currentWeaponSlot === 'GRENADE') {
+          this.isHoldingGrenade = true;
+          if (this.onGrenadeAim) this.onGrenadeAim(true);
+        } else {
+          if (this.onShoot) this.onShoot();
+        }
+      };
+
+      const handleFireEnd = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.isHoldingGrenade) {
+          this.isHoldingGrenade = false;
+          if (this.onGrenadeAim) this.onGrenadeAim(false);
+          if (this.onGrenadeThrow) this.onGrenadeThrow();
+        }
+      };
+
+      fireBtn.addEventListener('touchstart', handleFireStart, { passive: false });
+      fireBtn.addEventListener('touchend', handleFireEnd, { passive: false });
+      fireBtn.addEventListener('mousedown', handleFireStart);
+      fireBtn.addEventListener('mouseup', handleFireEnd);
+    }
 
     // ADS Toggle Button
     bindTouchBtn('m-btn-ads', () => {
@@ -439,6 +502,10 @@ export class FPSControls {
     }
     if (e.key === '2' || e.code === 'Digit2' || e.code === 'Numpad2') {
       if (this.onSlotSwitch) this.onSlotSwitch('KNIFE');
+      return;
+    }
+    if (e.key === '3' || e.code === 'Digit3' || e.code === 'Numpad3' || key === 'g' || e.code === 'KeyG') {
+      if (this.onSlotSwitch) this.onSlotSwitch('GRENADE');
       return;
     }
     if (e.key === 'q' || key === 'q' || e.code === 'KeyQ') {
@@ -552,6 +619,10 @@ export class FPSControls {
     this.pitchObject.rotation.z = 0;
   }
 
+  addCameraShake(amount) {
+    this.shakeAmount = Math.min(0.65, this.shakeAmount + amount);
+  }
+
   get position() {
     return this.yawObject.position;
   }
@@ -617,7 +688,15 @@ export class FPSControls {
     this.pitchObject.position.y = this.currentEyeHeight;
 
     const targetRoll = this.isSliding ? -0.05 : 0.0;
-    this.pitchObject.rotation.z = THREE.MathUtils.damp(this.pitchObject.rotation.z, targetRoll, 10.0, delta);
+    let rollOffset = 0;
+    if (this.shakeAmount > 0.001) {
+      rollOffset = (Math.random() - 0.5) * this.shakeAmount * 0.25;
+      this.pitchObject.position.x = (Math.random() - 0.5) * this.shakeAmount * 0.15;
+      this.shakeAmount = Math.max(0, this.shakeAmount - delta * 2.5);
+    } else {
+      this.pitchObject.position.x = 0;
+    }
+    this.pitchObject.rotation.z = THREE.MathUtils.damp(this.pitchObject.rotation.z, targetRoll + rollOffset, 10.0, delta);
 
     // 1. Calculate desired movement direction from Keyboard OR Touch Joystick
     const moveDir = new THREE.Vector3();

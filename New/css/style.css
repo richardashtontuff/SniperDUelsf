@@ -338,6 +338,15 @@ body, html {
     pointer-events: auto;
   }
 
+  .weapon-slot-bar {
+    gap: 4px;
+  }
+
+  .slot-chip {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
   .weapon-card {
     min-width: 140px;
     padding: 8px 14px;
@@ -580,6 +589,52 @@ body, html {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+}
+
+.weapon-slot-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.slot-chip {
+  background: rgba(18, 22, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #c0caf5;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.slot-chip:hover {
+  background: rgba(30, 36, 46, 0.95);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+}
+
+.slot-chip.active {
+  background: rgba(0, 210, 255, 0.22);
+  border-color: #00d2ff;
+  color: #00d2ff;
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
+}
+
+.chip-num {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  color: #ffffff;
 }
 
 .weapon-card {

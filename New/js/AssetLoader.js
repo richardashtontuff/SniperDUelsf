@@ -284,6 +284,99 @@ export class AssetLoader {
     return root;
   }
 
+  // Procedural Tactical Frag Grenade (M67 / Pineapple tactical grenade)
+  static createProceduralGrenade() {
+    const root = new THREE.Group();
+    root.name = 'TacticalGrenade';
+
+    const oliveMat = new THREE.MeshStandardMaterial({
+      color: 0x3d4b38,
+      roughness: 0.65,
+      metalness: 0.25
+    });
+    const darkMetalMat = new THREE.MeshStandardMaterial({
+      color: 0x1f2326,
+      roughness: 0.5,
+      metalness: 0.75
+    });
+    const steelMat = new THREE.MeshStandardMaterial({
+      color: 0xb0b8c0,
+      roughness: 0.25,
+      metalness: 0.95
+    });
+    const yellowMat = new THREE.MeshStandardMaterial({
+      color: 0xe6b800,
+      roughness: 0.5,
+      metalness: 0.1
+    });
+
+    // 1. Grenade Spheroid Body
+    const bodyGeo = new THREE.SphereGeometry(0.065, 18, 14);
+    bodyGeo.scale(1.0, 1.25, 1.0);
+    const bodyMesh = new THREE.Mesh(bodyGeo, oliveMat);
+    bodyMesh.castShadow = true;
+    root.add(bodyMesh);
+
+    // 2. Tactical Fragmentation Rings (3 ribbed segments)
+    [-0.035, 0.0, 0.035].forEach(yPos => {
+      const ribGeo = new THREE.TorusGeometry(0.066, 0.005, 8, 24);
+      ribGeo.rotateX(Math.PI / 2);
+      const ribMesh = new THREE.Mesh(ribGeo, darkMetalMat);
+      ribMesh.position.y = yPos;
+      root.add(ribMesh);
+    });
+
+    // 3. Collar / Fuse Neck
+    const neckGeo = new THREE.CylinderGeometry(0.024, 0.027, 0.035, 14);
+    const neckMesh = new THREE.Mesh(neckGeo, darkMetalMat);
+    neckMesh.position.y = 0.095;
+    root.add(neckMesh);
+
+    // 4. Yellow High-Explosive Ordnance Ring
+    const stripeGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.008, 14);
+    const stripeMesh = new THREE.Mesh(stripeGeo, yellowMat);
+    stripeMesh.position.y = 0.088;
+    root.add(stripeMesh);
+
+    // 5. Fuse Cap / Bouchon Top
+    const capGeo = new THREE.CylinderGeometry(0.016, 0.018, 0.025, 12);
+    const capMesh = new THREE.Mesh(capGeo, steelMat);
+    capMesh.position.y = 0.12;
+    root.add(capMesh);
+
+    // 6. Safety Lever / Curved Spoon
+    const spoonGroup = new THREE.Group();
+    spoonGroup.position.set(0, 0.12, 0);
+
+    const spoonGeo = new THREE.BoxGeometry(0.018, 0.14, 0.006);
+    const spoonMesh = new THREE.Mesh(spoonGeo, oliveMat);
+    spoonMesh.position.set(0.032, -0.05, 0);
+    spoonMesh.rotation.z = -0.12;
+    spoonGroup.add(spoonMesh);
+    root.add(spoonGroup);
+
+    // 7. Safety Pin Pull Ring & Cotter Pin
+    const pinShaftGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.035, 8);
+    pinShaftGeo.rotateZ(Math.PI / 2);
+    const pinShaft = new THREE.Mesh(pinShaftGeo, steelMat);
+    pinShaft.position.set(0, 0.115, 0);
+    root.add(pinShaft);
+
+    const ringGeo = new THREE.TorusGeometry(0.018, 0.003, 8, 18);
+    const ringMesh = new THREE.Mesh(ringGeo, steelMat);
+    ringMesh.position.set(-0.024, 0.115, 0);
+    ringMesh.rotation.y = Math.PI / 2;
+    root.add(ringMesh);
+
+    root.userData = {
+      bodyMesh,
+      spoonGroup,
+      ringMesh
+    };
+
+    return root;
+  }
+
   // Procedural Target Dummy for Shooting Range in Lobby
   static createTargetDummy() {
     const root = new THREE.Group();
