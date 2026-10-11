@@ -392,7 +392,8 @@ export class MatchManager {
 
   // Received from server when a round ends in 2-player match
   onTwoPlayerRoundOver(msg) {
-    const isMeWinner = (msg.roundWinnerId === this.mpClient?.myId);
+    const myId = this.mpClient ? (this.mpClient.localPlayerId || this.mpClient.myId) : null;
+    const isMeWinner = (msg.isWinner !== undefined) ? msg.isWinner : (msg.roundWinnerId === myId);
     this.lastRoundWinner = isMeWinner ? 'YOU' : 'OPPONENT';
 
     this.scorePlayer = msg.scores.blue;
@@ -405,6 +406,8 @@ export class MatchManager {
 
     if (isMeWinner) {
       this.audio.playRoundWon();
+      // Winner stays upright and does NOT fall
+      this.controls.resetFromDeath();
       // Make defeated opponent's avatar fall over
       if (this.mpClient && this.mpClient.remotePlayers.has(msg.roundLoserId)) {
         const rp = this.mpClient.remotePlayers.get(msg.roundLoserId);
@@ -415,7 +418,7 @@ export class MatchManager {
       }
     } else {
       this.audio.playRoundLost();
-      // Local player died: fall over and pan camera to winner!
+      // Defeated player falls over and pans camera to winner
       let winnerPos = null;
       if (this.mpClient && this.mpClient.remotePlayers.has(msg.roundWinnerId)) {
         winnerPos = this.mpClient.remotePlayers.get(msg.roundWinnerId).group.position;

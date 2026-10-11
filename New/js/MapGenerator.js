@@ -220,13 +220,17 @@ export class MapGenerator {
     const orangeMat = new THREE.MeshStandardMaterial({ map: this.studTextureOrange, roughness: 0.5 });
     orangeMat.map.repeat.set(4, 3);
 
-    // Blue Team High Perch & Ramp
-    this.createBox(0, 0.5, 55, 24, 2.0, 14, blueMat, this.arenaGroup);
-    this.createRamp(0, 0.5, 45, 12, 2.0, 6, blueMat, this.arenaGroup, 'south');
+    // Blue Team High Perch & Ramp (extended flush to back wall to eliminate trench gap)
+    this.createBox(0, 0.5, 56.5, 28, 2.0, 16, blueMat, this.arenaGroup);
+    this.createRamp(0, 0.5, 45, 12, 2.0, 7, blueMat, this.arenaGroup, 'south');
+    this.createRamp(-16, 0.5, 52, 4, 2.0, 9, blueMat, this.arenaGroup, 'south');
+    this.createRamp(16, 0.5, 52, 4, 2.0, 9, blueMat, this.arenaGroup, 'south');
 
-    // Orange Team High Perch & Ramp
-    this.createBox(0, 0.5, -25, 24, 2.0, 14, orangeMat, this.arenaGroup);
-    this.createRamp(0, 0.5, -15, 12, 2.0, 6, orangeMat, this.arenaGroup, 'north');
+    // Orange Team High Perch & Ramp (extended flush to back wall to eliminate trench gap)
+    this.createBox(0, 0.5, -26.5, 28, 2.0, 16, orangeMat, this.arenaGroup);
+    this.createRamp(0, 0.5, -15, 12, 2.0, 7, orangeMat, this.arenaGroup, 'north');
+    this.createRamp(-16, 0.5, -22, 4, 2.0, 9, orangeMat, this.arenaGroup, 'north');
+    this.createRamp(16, 0.5, -22, 4, 2.0, 9, orangeMat, this.arenaGroup, 'north');
 
     // Mid Bridge
     const midBridgeMat = new THREE.MeshStandardMaterial({ color: 0x434c5e, roughness: 0.5 });

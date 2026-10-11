@@ -330,21 +330,35 @@ function handleClientMessage(senderId, data) {
               player.health = 100;
               target.health = 100;
 
-              const roundOverMsg = JSON.stringify({
-                type: 'ROUND_OVER',
-                roundWinnerId: senderId,
-                roundLoserId: data.targetId,
-                isHeadshot: data.isHeadshot,
-                scores: { blue: blueScore, red: redScore },
-                nextRoundNumber: match.roundNumber,
-                maxScore: match.maxScore,
-                intermissionSeconds: 3
-              });
-
               const p1Client = clients.get(match.p1);
               const p2Client = clients.get(match.p2);
-              if (p1Client && p1Client.ws.readyState === p1Client.ws.OPEN) p1Client.ws.send(roundOverMsg);
-              if (p2Client && p2Client.ws.readyState === p2Client.ws.OPEN) p2Client.ws.send(roundOverMsg);
+
+              if (p1Client && p1Client.ws.readyState === p1Client.ws.OPEN) {
+                p1Client.ws.send(JSON.stringify({
+                  type: 'ROUND_OVER',
+                  roundWinnerId: senderId,
+                  roundLoserId: data.targetId,
+                  isWinner: (senderId === match.p1),
+                  isHeadshot: data.isHeadshot,
+                  scores: { blue: blueScore, red: redScore },
+                  nextRoundNumber: match.roundNumber,
+                  maxScore: match.maxScore,
+                  intermissionSeconds: 3
+                }));
+              }
+              if (p2Client && p2Client.ws.readyState === p2Client.ws.OPEN) {
+                p2Client.ws.send(JSON.stringify({
+                  type: 'ROUND_OVER',
+                  roundWinnerId: senderId,
+                  roundLoserId: data.targetId,
+                  isWinner: (senderId === match.p2),
+                  isHeadshot: data.isHeadshot,
+                  scores: { blue: blueScore, red: redScore },
+                  nextRoundNumber: match.roundNumber,
+                  maxScore: match.maxScore,
+                  intermissionSeconds: 3
+                }));
+              }
             }
           } else {
             if (player.ws.readyState === player.ws.OPEN) {

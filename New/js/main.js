@@ -282,6 +282,9 @@ class GameEngine {
     const mapCards = document.querySelectorAll('.map-card');
     mapCards.forEach(card => {
       bindAction(card, () => {
+        if (this.matchManager.isTwoPlayer || this.matchManager.state !== 'LOBBY') {
+          return;
+        }
         const mapName = card.getAttribute('data-map');
         mapCards.forEach(c => {
           c.classList.remove('selected');
@@ -358,6 +361,18 @@ class GameEngine {
   }
 
   openMapModal() {
+    if (this.matchManager.isTwoPlayer || this.matchManager.state !== 'LOBBY') {
+      this.matchManager.updateStateBanner('CANNOT SWITCH MAPS DURING AN ACTIVE 1v1 MATCH!', true, '#ff4444');
+      setTimeout(() => {
+        if (this.matchManager.state === 'ROUND_ACTIVE') {
+          const duelLabel = this.matchManager.isTwoPlayer ? '1v1 PLAYER DUEL' : 'SOLO BOT DUEL';
+          this.matchManager.updateStateBanner(`${duelLabel} - ROUND ${this.matchManager.roundNumber}`, true, '#00d2ff');
+        } else if (this.matchManager.state === 'LOBBY') {
+          this.matchManager.updateStateBanner('LOBBY PRACTICE - STEP ON A DUEL PAD TO PLAY', true, '#ffffff');
+        }
+      }, 2500);
+      return;
+    }
     const modal = document.getElementById('map-modal');
     if (modal) modal.style.display = 'flex';
   }

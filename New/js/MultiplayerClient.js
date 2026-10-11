@@ -20,6 +20,10 @@ export class MultiplayerClient {
     this.connect();
   }
 
+  get myId() {
+    return this.localPlayerId;
+  }
+
   initVoteUI() {
     const cards = document.querySelectorAll('.vote-card');
     cards.forEach(card => {
