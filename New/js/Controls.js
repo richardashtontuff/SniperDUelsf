@@ -616,6 +616,15 @@ export class FPSControls {
     }
   }
 
+  // Applies physical explosion impulse / knockback launch to player
+  applyImpulse(impulse) {
+    if (!impulse || this.isDead) return;
+    this.velocity.x += impulse.x || 0;
+    this.velocity.y += impulse.y || 0;
+    this.velocity.z += impulse.z || 0;
+    this.canJump = false;
+  }
+
   triggerDeath(winnerPos = null) {
     this.isDead = true;
     this.deathTimer = 0;

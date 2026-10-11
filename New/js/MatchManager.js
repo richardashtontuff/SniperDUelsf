@@ -303,8 +303,49 @@ export class MatchManager {
     this.audio.playRoundStart();
     this.updateStateBanner('ROUND ACTIVE - ELIMINATE THE ENEMY!', true, '#00ffcc');
 
+    // Instantly prime weapon system so the first shot fires without delay
+    if (this.weaponSystem) {
+      this.weaponSystem.resetStats();
+    }
+
+    // Trigger buffered shot if player clicked or held fire during countdown
+    if (this.game && (this.game.pendingShot || (this.controls && this.controls.isShootingContinuous))) {
+      this.game.pendingShot = false;
+      setTimeout(() => {
+        if (this.state === 'ROUND_ACTIVE') {
+          this.game.handleShoot();
+        }
+      }, 20);
+    }
+
     setTimeout(() => {
       if (this.state === 'ROUND_ACTIVE') {
+        this.updateStateBanner('', false);
+      }
+    }, 1500);
+  }
+
+  enterTestingLab() {
+    this.state = 'TESTING_LAB';
+    this.updateStateBanner('BOT TESTING LAB • TEST WEAPONS & PHYSICS • WALK TO "LEAVE AREA" TO EXIT', true, '#00e5ff');
+    if (this.weaponSystem) {
+      this.weaponSystem.resetStats();
+    }
+    setTimeout(() => {
+      if (this.state === 'TESTING_LAB') {
+        this.updateStateBanner('', false);
+      }
+    }, 3500);
+  }
+
+  leaveTestingLab() {
+    this.state = 'LOBBY';
+    this.updateStateBanner('RETURNED TO LOBBY', true, '#00d2ff');
+    if (this.weaponSystem) {
+      this.weaponSystem.resetStats();
+    }
+    setTimeout(() => {
+      if (this.state === 'LOBBY') {
         this.updateStateBanner('', false);
       }
     }, 1500);

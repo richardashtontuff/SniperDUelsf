@@ -163,6 +163,68 @@ export class AudioSystem {
     }, 1350);
   }
 
+  // RPG-7 Rocket Launcher Firing Audio: Muzzle blast followed by screaming rocket thruster roar
+  playRPGLaunch() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    // 1. Initial Muzzle Launch Blast (Heavy explosive thump)
+    const boomOsc = this.ctx.createOscillator();
+    const boomGain = this.ctx.createGain();
+    boomOsc.type = 'sawtooth';
+    boomOsc.frequency.setValueAtTime(240, now);
+    boomOsc.frequency.exponentialRampToValueAtTime(35, now + 0.38);
+    boomGain.gain.setValueAtTime(0.9, now);
+    boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+    boomOsc.connect(boomGain);
+    boomGain.connect(this.masterGain);
+    boomOsc.start(now);
+    boomOsc.stop(now + 0.45);
+
+    // 2. High-speed Rocket Motor Thruster Roar / Whoosh
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.65);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.22));
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1100, now);
+    filter.frequency.exponentialRampToValueAtTime(280, now + 0.58);
+    filter.Q.setValueAtTime(2.2, now);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.75, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.62);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain);
+    noise.start(now);
+  }
+
+  // RPG 3.0-Second Reload Audio: Empty tube clank, slide fresh PG-7V rocket into tube, latch lock
+  playRPGReload() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    // Stage 1: Empty launcher tube tilt & clank (t = 0.3s)
+    setTimeout(() => {
+      this.playMetallicClick(750, 280, 0.08, 0.4);
+    }, 300);
+    // Stage 2: Slide rocket warhead into front tube (t = 1.4s)
+    setTimeout(() => {
+      this.playMetallicClick(520, 880, 0.14, 0.55);
+    }, 1400);
+    // Stage 3: Rocket contact latch lock & hammer cock (t = 2.5s)
+    setTimeout(() => {
+      this.playMetallicClick(1500, 920, 0.07, 0.65);
+    }, 2500);
+  }
+
   // Bolt-action sequence: metallic lift & pull back, then push forward & lock
   playBoltAction() {
     this.ensureContext();

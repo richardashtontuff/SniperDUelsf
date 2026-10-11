@@ -49,12 +49,16 @@ export class CameraManager {
 
   updateADS(adsProgress, delta, weaponType = 'SNIPER') {
     const safeProgress = (typeof adsProgress === 'number' && !isNaN(adsProgress)) ? adsProgress : 0;
+    const isSniper = weaponType === 'SNIPER';
+    const isRPG = weaponType === 'RPG';
     const isAR = weaponType === 'AR';
 
-    // Interpolate World Camera FOV: Sniper has high 20° zoom, AR has tactical 52° zoom
-    const targetFov = isAR 
-      ? THREE.MathUtils.lerp(this.baseFov, 52, safeProgress)
-      : THREE.MathUtils.lerp(this.baseFov, this.scopedFov, safeProgress);
+    // Interpolate World Camera FOV: Sniper has high 20° zoom, RPG has 50° sight zoom, AR has tactical 52° zoom
+    let zoomTarget = this.scopedFov;
+    if (isAR) zoomTarget = 52;
+    else if (isRPG) zoomTarget = 50;
+
+    const targetFov = THREE.MathUtils.lerp(this.baseFov, zoomTarget, safeProgress);
 
     this.worldCamera.fov = isNaN(targetFov) ? this.baseFov : targetFov;
     this.worldCamera.updateProjectionMatrix();
@@ -64,7 +68,7 @@ export class CameraManager {
       this.scopeOverlay = document.getElementById('sniper-scope-overlay');
     }
     if (this.scopeOverlay) {
-      if (!isAR && safeProgress > 0.6) {
+      if (isSniper && safeProgress > 0.6) {
         this.scopeOverlay.style.opacity = ((safeProgress - 0.6) / 0.4).toFixed(3);
         this.scopeOverlay.style.pointerEvents = 'none';
         this.scopeOverlay.style.display = 'block';

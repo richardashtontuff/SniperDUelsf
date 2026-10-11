@@ -138,6 +138,26 @@ export class ParticleSystem {
     });
   }
 
+  // RPG Rocket exhaust smoke puffs & fiery trail
+  addRocketSmoke(pos) {
+    const smokeGeo = new THREE.SphereGeometry(0.16 + Math.random() * 0.08, 6, 6);
+    const smokeMat = new THREE.MeshBasicMaterial({
+      color: Math.random() > 0.4 ? 0xd0d0d0 : 0xff7711,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending
+    });
+    const smokeMesh = new THREE.Mesh(smokeGeo, smokeMat);
+    smokeMesh.position.copy(pos);
+    this.scene.add(smokeMesh);
+    this.sparks.push({
+      mesh: smokeMesh,
+      vel: new THREE.Vector3((Math.random() - 0.5) * 0.8, Math.random() * 0.8 + 0.2, (Math.random() - 0.5) * 0.8),
+      life: 0.35,
+      maxLife: 0.35
+    });
+  }
+
   // Tactical Grenade High-Explosive Detonation FX (Shockwave, fiery fireballs, smoke & debris)
   addExplosion(center) {
     const explosionGroup = new THREE.Group();

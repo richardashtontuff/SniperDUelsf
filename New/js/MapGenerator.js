@@ -511,6 +511,158 @@ export class MapGenerator {
 
     // Map Selector Terminal (Lobby East: X = 16, Z = -85)
     this.buildMapTerminal(this.lobbyGroup);
+
+    // Dedicated Bot Testing Lab Portal & Sandbox Room (Lobby West: X = -14, Z = -93)
+    this.buildTestingLabPortal(this.lobbyGroup);
+    this.buildTestingLab(this.lobbyGroup);
+  }
+
+  // Interactive Portal Pad in Lobby to enter the Testing Lab
+  buildTestingLabPortal(parent) {
+    const portalGroup = new THREE.Group();
+    portalGroup.position.set(-14, 0.52, -93);
+
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.2, 2.5, 0.15, 24),
+      new THREE.MeshStandardMaterial({ color: 0x221338, roughness: 0.3, emissive: 0x120520 })
+    );
+    portalGroup.add(base);
+
+    const ringGeo = new THREE.RingGeometry(1.9, 2.2, 24);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.y = 0.08;
+    portalGroup.add(ring);
+
+    // Holographic Floating Title
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(20, 10, 35, 0.9)';
+    ctx.roundRect(10, 10, 492, 108, 16);
+    ctx.fill();
+    ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.fillStyle = '#00e5ff'; ctx.font = 'bold 34px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('🤖 BOT TESTING LAB', 256, 52);
+    ctx.fillStyle = '#ffaa00'; ctx.font = 'bold 22px "Segoe UI", sans-serif';
+    ctx.fillText('PHYSICS DUMMY • STEP HERE TO ENTER', 256, 92);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    sprite.position.set(0, 2.5, 0);
+    sprite.scale.set(3.8, 0.95, 1.0);
+    portalGroup.add(sprite);
+
+    parent.add(portalGroup);
+    portalGroup.userData = { ringMesh: ring };
+    this.testingEntrancePad = portalGroup;
+  }
+
+  // Dedicated Separate Testing Lab Room (Isolated at Z: -200)
+  buildTestingLab(parent) {
+    const labGroup = new THREE.Group();
+    labGroup.position.set(0, 0, 0);
+
+    // Lab floor: 32m wide, 44m long (Z: -222 to -178)
+    const labFloorMat = new THREE.MeshStandardMaterial({
+      color: 0x1b2028,
+      roughness: 0.35,
+      metalness: 0.3
+    });
+    this.createBox(0, 0, -200, 32, 0.5, 44, labFloorMat, labGroup, true);
+
+    // Boundary walls (12m high)
+    const labWallMat = new THREE.MeshStandardMaterial({ color: 0x27303f, roughness: 0.5 });
+    this.createBox(-16, 0.5, -200, 1.5, 12, 44, labWallMat, labGroup, true); // West
+    this.createBox(16, 0.5, -200, 1.5, 12, 44, labWallMat, labGroup, true);  // East
+    this.createBox(0, 0.5, -222, 32, 12, 1.5, labWallMat, labGroup, true);  // North
+    this.createBox(0, 0.5, -178, 32, 12, 1.5, labWallMat, labGroup, true);  // South
+
+    // Distance markings on floor from dummy starting position (Z = -205)
+    const distanceMarkers = [
+      { z: -200, text: '5 METERS' },
+      { z: -195, text: '10 METERS' },
+      { z: -190, text: '15 METERS' },
+      { z: -185, text: '20 METERS' }
+    ];
+
+    distanceMarkers.forEach(m => {
+      const stripGeo = new THREE.PlaneGeometry(28, 0.25);
+      stripGeo.rotateX(-Math.PI / 2);
+      const stripMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.55 });
+      const strip = new THREE.Mesh(stripGeo, stripMat);
+      strip.position.set(0, 0.52, m.z);
+      labGroup.add(strip);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 256; canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#00d2ff'; ctx.font = 'bold 28px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(m.text, 128, 42);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.7), labelMat);
+      label.rotateX(-Math.PI / 2);
+      label.position.set(-11, 0.53, m.z);
+      labGroup.add(label);
+    });
+
+    // Test Dummy starting pedestal
+    const botPedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.0, 2.2, 0.15, 24),
+      new THREE.MeshStandardMaterial({ color: 0xff6600, roughness: 0.3, emissive: 0x442200 })
+    );
+    botPedestal.position.set(0, 0.55, -205);
+    labGroup.add(botPedestal);
+
+    const ringGeo = new THREE.RingGeometry(1.8, 2.0, 24);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffaa00, side: THREE.DoubleSide }));
+    ring.position.set(0, 0.64, -205);
+    labGroup.add(ring);
+
+    // "LEAVE AREA" Exit Pad (South end of room at Z = -182)
+    const exitPadGroup = new THREE.Group();
+    exitPadGroup.position.set(0, 0.52, -182);
+
+    const padBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.4, 2.7, 0.15, 24),
+      new THREE.MeshStandardMaterial({ color: 0xd90429, roughness: 0.3, emissive: 0x330008 })
+    );
+    exitPadGroup.add(padBase);
+
+    const exitRingGeo = new THREE.RingGeometry(2.1, 2.4, 24);
+    exitRingGeo.rotateX(-Math.PI / 2);
+    const exitRing = new THREE.Mesh(exitRingGeo, new THREE.MeshBasicMaterial({ color: 0xff3355, side: THREE.DoubleSide }));
+    exitRing.position.y = 0.08;
+    exitPadGroup.add(exitRing);
+
+    // Floating sign: "LEAVE AREA / RETURN TO LOBBY"
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 512; signCanvas.height = 128;
+    const sCtx = signCanvas.getContext('2d');
+    sCtx.fillStyle = 'rgba(217, 4, 41, 0.88)';
+    sCtx.roundRect(10, 10, 492, 108, 16);
+    sCtx.fill();
+    sCtx.strokeStyle = '#ffffff'; sCtx.lineWidth = 4; sCtx.stroke();
+    sCtx.fillStyle = '#ffffff'; sCtx.font = 'bold 36px "Segoe UI", sans-serif'; sCtx.textAlign = 'center';
+    sCtx.fillText('🚪 LEAVE AREA', 256, 52);
+    sCtx.font = 'bold 24px "Segoe UI", sans-serif';
+    sCtx.fillText('STEP HERE TO RETURN TO LOBBY', 256, 92);
+
+    const signTex = new THREE.CanvasTexture(signCanvas);
+    const signSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex, transparent: true }));
+    signSprite.position.set(0, 2.5, 0);
+    signSprite.scale.set(4.0, 1.0, 1.0);
+    exitPadGroup.add(signSprite);
+
+    labGroup.add(exitPadGroup);
+    parent.add(labGroup);
+
+    exitPadGroup.userData = { ringMesh: exitRing };
+    this.testingExitPad = exitPadGroup;
   }
 
   createDuelPad(x, y, z, radius, colorHex, labelText, mode) {
@@ -622,6 +774,15 @@ export class MapGenerator {
       const scale = 1.0 + Math.sin(time * 3.5) * 0.04;
       pad.userData.ringMesh.scale.set(scale, scale, scale);
     });
+
+    if (this.testingEntrancePad && this.testingEntrancePad.userData.ringMesh) {
+      const scale = 1.0 + Math.sin(time * 3.0) * 0.05;
+      this.testingEntrancePad.userData.ringMesh.scale.set(scale, scale, scale);
+    }
+    if (this.testingExitPad && this.testingExitPad.userData.ringMesh) {
+      const scale = 1.0 + Math.sin(time * 3.0) * 0.05;
+      this.testingExitPad.userData.ringMesh.scale.set(scale, scale, scale);
+    }
 
     if (this.shopKiosk) {
       this.shopKiosk.crateMesh.rotation.y += delta * 1.2;

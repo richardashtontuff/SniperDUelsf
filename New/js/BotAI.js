@@ -177,6 +177,14 @@ export class BotAI {
     return false;
   }
 
+  // Launches bot with directional impulse from explosions
+  applyImpulse(impulse) {
+    if (!impulse) return;
+    this.velocity.x += impulse.x || 0;
+    this.velocity.y += impulse.y || 0;
+    this.velocity.z += impulse.z || 0;
+  }
+
   // Classic Roblox shatter death
   die() {
     this.isAlive = false;
@@ -222,6 +230,19 @@ export class BotAI {
 
     const distToPlayer = this.position.distanceTo(playerPosition);
     const hasSight = this.canSeePlayer(playerPosition);
+
+    // Apply explosive launch physics / momentum
+    if (this.velocity.lengthSq() > 0.001) {
+      this.position.addScaledVector(this.velocity, delta);
+      this.velocity.x -= this.velocity.x * 4.5 * delta;
+      this.velocity.z -= this.velocity.z * 4.5 * delta;
+      this.velocity.y -= 26.0 * delta; // Gravity
+      if (this.position.y < 1.8) {
+        this.position.y = 1.8;
+        this.velocity.y = 0;
+      }
+      this.mesh.position.copy(this.position);
+    }
 
     // Orient towards player or moving waypoint
     if (hasSight) {

@@ -11,6 +11,7 @@ import { CaseSystem } from './CaseSystem.js';
 import { MatchManager } from './MatchManager.js';
 import { MultiplayerClient } from './MultiplayerClient.js';
 import { AssetLoader } from './AssetLoader.js';
+import { DummyBot } from './DummyBot.js';
 
 // Available weapons registry for scalable loadouts
 export const WEAPON_REGISTRY = [
@@ -43,6 +44,21 @@ export const WEAPON_REGISTRY = [
     fireMode: 'Full-Automatic',
     optic: 'Reflex Holo Sight',
     description: 'Rapid automatic tactical carbine. 30 bullets, 5 dmg per shot, 600 RPM. Aiming down sights tightens spread significantly.'
+  },
+  {
+    id: 'RPG',
+    name: 'RPG-7 Rocket Launcher',
+    category: 'PRIMARY WEAPON',
+    icon: '🚀',
+    color: '#00e5ff',
+    badge: 'EXPANDED SPLASH & SPEED',
+    damage: 75,
+    ammo: 1,
+    maxAmmo: 1,
+    rpm: 20,
+    fireMode: 'Single Rocket',
+    optic: 'PGO-7 Sight',
+    description: 'Anti-tank rocket launcher. Fires fast high-explosive rockets (88 m/s) with an 11.5m blast radius and gentle damage falloff. Launches targets. Zero self-damage to shooter. 3s reload.'
   }
 ];
 
@@ -154,9 +170,15 @@ export class GameEngine {
     this.mpClient = new MultiplayerClient(this);
     this.matchManager.setMultiplayerClient(this.mpClient);
     this.matchManager.setWeaponSystem(this.weaponSystem);
+    this.matchManager.game = this;
 
-    // 11. Tactical Grenades & Aiming Trajectory
+    // 11. Physics Sandbox Dummy Bot (Dedicated Testing Lab)
+    this.dummyBot = new DummyBot(this.worldScene);
+    this.pendingShot = false;
+
+    // 12. Tactical Grenades & Aiming Trajectory
     this.activeGrenades = [];
+    this.activeRockets = [];
     this.isAimingGrenade = false;
     this.initGrenadeTrajectory();
 
@@ -538,9 +560,13 @@ export class GameEngine {
       const chip1 = document.getElementById('slot-chip-sniper');
       if (chip1) {
         const activeGun = WEAPON_REGISTRY.find(g => g.id === this.weaponSystem.primaryWeapon);
-        chip1.innerHTML = activeGun && activeGun.id === 'AR'
-          ? '<span class="chip-num">1</span> ⚡ AR-RIFLE'
-          : '<span class="chip-num">1</span> 🔫 AWP';
+        if (activeGun && activeGun.id === 'RPG') {
+          chip1.innerHTML = '<span class="chip-num">1</span> 🚀 RPG-7';
+        } else if (activeGun && activeGun.id === 'AR') {
+          chip1.innerHTML = '<span class="chip-num">1</span> ⚡ AR-RIFLE';
+        } else {
+          chip1.innerHTML = '<span class="chip-num">1</span> 🔫 AWP';
+        }
       }
     };
 
@@ -823,7 +849,11 @@ export class GameEngine {
   handleShoot() {
     if (this.caseSystem.isUnboxing) return;
     // Lock shooting outside of active gameplay (cannot shoot during intermission, warmup, or victory)
-    if (this.matchManager.state !== 'LOBBY' && this.matchManager.state !== 'ROUND_ACTIVE') {
+    if (this.matchManager.state !== 'LOBBY' && this.matchManager.state !== 'ROUND_ACTIVE' && this.matchManager.state !== 'TESTING_LAB') {
+      // Buffer shot if player clicked during warmup countdown right before round start
+      if (this.matchManager.state === 'WARMUP') {
+        this.pendingShot = true;
+      }
       return;
     }
 
@@ -840,6 +870,12 @@ export class GameEngine {
     // Knife Attack
     if (shootResult.type === 'KNIFE') {
       this.handleKnifeSlash();
+      return;
+    }
+
+    // RPG Rocket Attack
+    if (shootResult.type === 'RPG') {
+      this.fireRPGRocket();
       return;
     }
 
@@ -864,12 +900,17 @@ export class GameEngine {
     // Muzzle position for tracer beam
     const muzzlePos = shootRay.origin.clone().add(rayDir.clone().multiplyScalar(0.8));
 
-    // Objects to test: Bot limbs, Remote players, Target Dummies, and Map Obstacles
+    // Objects to test: Bot limbs, Remote players, Target Dummies, Physics Dummy Bot, and Map Obstacles
     const candidates = [];
 
     // Bot hitboxes
     if (this.bot.isAlive && this.bot.mesh.visible) {
       candidates.push(this.bot.head, this.bot.torso, this.bot.leftArm, this.bot.rightArm, this.bot.leftLeg, this.bot.rightLeg);
+    }
+
+    // Physics Dummy Bot in Testing Lab
+    if (this.dummyBot && this.dummyBot.mesh && this.dummyBot.mesh.visible) {
+      candidates.push(this.dummyBot.head, this.dummyBot.torso, this.dummyBot.leftArm, this.dummyBot.rightArm, this.dummyBot.leftLeg, this.dummyBot.rightLeg);
     }
 
     // Remote human player hitboxes
@@ -901,7 +942,19 @@ export class GameEngine {
       // 1. Tracer Beam from weapon to impact point
       this.particles.addTracer(muzzlePos, hitPoint);
 
-      // 2. Check if Remote Human Player Hit (Cannot attack in lobby)
+      // 2. Check if Physics Dummy Bot Hit (Infinite Health Sandbox Dummy in Testing Lab)
+      if (hitObj.userData && hitObj.userData.isDummyBot) {
+        const isHeadshot = hitObj.userData.isHeadshot === true;
+        const damage = shootResult.type === 'AR' ? 5 : (isHeadshot ? 100 : 92);
+        this.particles.addImpact(hitPoint, hit.face ? hit.face.normal : new THREE.Vector3(0, 1, 0), isHeadshot ? 0xffcc00 : 0x00e5ff, 14);
+        this.dummyBot.takeDamage(damage, isHeadshot);
+        this.audio.playHitmarker(isHeadshot);
+        this.matchManager.showHitmarker(isHeadshot);
+        this.matchManager.showDamageNumber(damage, isHeadshot);
+        return;
+      }
+
+      // 3. Check if Remote Human Player Hit (Cannot attack in lobby)
       if (hitObj.userData && hitObj.userData.isRemotePlayer) {
         if (this.matchManager.state === 'ROUND_ACTIVE') {
           const isHeadshot = hitObj.userData.isHeadshot === true;
@@ -912,7 +965,7 @@ export class GameEngine {
         return;
       }
 
-      // 3. Check if Bot Hit (Cannot attack in lobby)
+      // 4. Check if Bot Hit (Cannot attack in lobby)
       if (hitObj.userData && hitObj.userData.isBot) {
         if (this.matchManager.state === 'ROUND_ACTIVE') {
           const isHeadshot = hitObj.userData.isHeadshot === true;
@@ -923,7 +976,7 @@ export class GameEngine {
         return;
       }
 
-      // 4. Check if Target Dummy Hit (Lobby Range)
+      // 5. Check if Target Dummy Hit (Lobby Range)
       const targetDummy = this.map.targetDummies.find(d =>
         d.userData.headMesh === hitObj || d.userData.torsoMesh === hitObj
       );
@@ -938,7 +991,7 @@ export class GameEngine {
         return;
       }
 
-      // 5. Wall Impact (sparks & dust)
+      // 6. Wall Impact (sparks & dust)
       if (hit.face) {
         this.particles.addImpact(hitPoint, hit.face.normal, 0xffbb44, 8);
       }
@@ -950,7 +1003,7 @@ export class GameEngine {
   }
 
   handleKnifeSlash() {
-    if (this.matchManager.state !== 'LOBBY' && this.matchManager.state !== 'ROUND_ACTIVE') {
+    if (this.matchManager.state !== 'LOBBY' && this.matchManager.state !== 'ROUND_ACTIVE' && this.matchManager.state !== 'TESTING_LAB') {
       return;
     }
 
@@ -960,6 +1013,9 @@ export class GameEngine {
     const candidates = [];
     if (this.bot.isAlive && this.bot.mesh.visible) {
       candidates.push(this.bot.head, this.bot.torso);
+    }
+    if (this.dummyBot && this.dummyBot.mesh && this.dummyBot.mesh.visible) {
+      candidates.push(this.dummyBot.head, this.dummyBot.torso);
     }
     if (this.mpClient && this.mpClient.remotePlayers) {
       for (const rp of this.mpClient.remotePlayers.values()) {
@@ -972,10 +1028,19 @@ export class GameEngine {
     const intersects = raycaster.intersectObjects(candidates, false);
     if (intersects.length > 0) {
       const hit = intersects[0];
-      // Cannot attack someone in lobby
+      const isHeadshot = hit.object.userData.isHeadshot === true;
+      const damage = isHeadshot ? 120 : 65;
+
+      if (hit.object.userData && hit.object.userData.isDummyBot) {
+        this.dummyBot.takeDamage(damage, isHeadshot);
+        this.audio.playHitmarker(isHeadshot);
+        this.matchManager.showHitmarker(isHeadshot);
+        this.matchManager.showDamageNumber(damage, isHeadshot);
+        this.particles.addImpact(hit.point, new THREE.Vector3(0, 1, 0), 0x00e5ff, 12);
+        return;
+      }
+
       if (this.matchManager.state === 'ROUND_ACTIVE') {
-        const isHeadshot = hit.object.userData.isHeadshot === true;
-        const damage = isHeadshot ? 120 : 65;
         if (hit.object.userData.isRemotePlayer) {
           this.mpClient.sendInflictDamage(hit.object.userData.playerId, damage, isHeadshot);
         } else {
@@ -1267,6 +1332,21 @@ export class GameEngine {
       }
     }
 
+    // 3b. Physics Dummy Bot in Testing Lab
+    if (this.dummyBot && this.dummyBot.mesh && this.dummyBot.mesh.visible) {
+      const dbDist = this.dummyBot.position.distanceTo(pos);
+      if (dbDist <= 8.0) {
+        const damage = calculateDamage(dbDist);
+        this.dummyBot.takeDamage(damage);
+        const blastDir = this.dummyBot.position.clone().sub(pos).normalize();
+        blastDir.y = Math.max(0.42, blastDir.y + 0.38);
+        this.dummyBot.applyImpulse(blastDir.multiplyScalar((damage / 150) * 22.0));
+        this.audio.playHitmarker(damage >= 100);
+        this.matchManager.showHitmarker(damage >= 100);
+        this.matchManager.showDamageNumber(damage, damage >= 100);
+      }
+    }
+
     // 4. Remote Opponent (2-Player 1v1 Matches)
     if (this.matchManager.isTwoPlayer && this.matchManager.state === 'ROUND_ACTIVE' && this.mpClient) {
       const oppId = this.matchManager.opponentId;
@@ -1311,6 +1391,287 @@ export class GameEngine {
     }
   }
 
+  // RPG-7 Rocket Firing Logic
+  fireRPGRocket() {
+    const shootRay = this.controls.getShootRay();
+    let rayDir = shootRay.direction.clone().normalize();
+
+    // Broadcast fire event in multiplayer
+    if (this.mpClient) {
+      this.mpClient.sendFireWeapon(shootRay.origin, rayDir, 0, this.weaponSystem.isAiming, 'RPG');
+    }
+
+    const forward = rayDir.clone().normalize();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.cameraManager.worldCamera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0);
+
+    // Muzzle launch position in world coordinates
+    const origin = shootRay.origin.clone()
+      .addScaledVector(forward, 0.75)
+      .addScaledVector(right, 0.2)
+      .addScaledVector(up, -0.1);
+
+    const rocketSpeed = 88.0; // Faster, high-velocity rocket flight
+    const velocity = forward.clone().multiplyScalar(rocketSpeed);
+
+    const rocketMesh = AssetLoader.createProceduralRocketWarhead();
+    rocketMesh.position.copy(origin);
+    rocketMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), forward);
+    rocketMesh.scale.set(1.4, 1.4, 1.4);
+
+    const rocketLight = new THREE.PointLight(0xff6600, 3.5, 9);
+    rocketLight.position.set(0, 0, 0.35);
+    rocketMesh.add(rocketLight);
+
+    this.worldScene.add(rocketMesh);
+
+    this.activeRockets.push({
+      mesh: rocketMesh,
+      light: rocketLight,
+      position: origin.clone(),
+      velocity: velocity.clone(),
+      direction: forward.clone(),
+      isRemote: false,
+      lifetime: 4.5,
+      trailTimer: 0
+    });
+  }
+
+  spawnRemoteRocket(origin, direction) {
+    const forward = direction.clone().normalize();
+    const rocketSpeed = 88.0; // Faster remote rocket velocity
+    const velocity = forward.clone().multiplyScalar(rocketSpeed);
+
+    const rocketMesh = AssetLoader.createProceduralRocketWarhead();
+    rocketMesh.position.copy(origin);
+    rocketMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), forward);
+    rocketMesh.scale.set(1.4, 1.4, 1.4);
+
+    const rocketLight = new THREE.PointLight(0xff6600, 3.5, 9);
+    rocketLight.position.set(0, 0, 0.35);
+    rocketMesh.add(rocketLight);
+
+    this.worldScene.add(rocketMesh);
+
+    this.activeRockets.push({
+      mesh: rocketMesh,
+      light: rocketLight,
+      position: origin.clone(),
+      velocity: velocity.clone(),
+      direction: forward.clone(),
+      isRemote: true,
+      lifetime: 4.5,
+      trailTimer: 0
+    });
+  }
+
+  updateActiveRockets(delta) {
+    if (!this.rpgRaycaster) this.rpgRaycaster = new THREE.Raycaster();
+
+    const candidates = [];
+    this.map.colliders.forEach(c => candidates.push(c.mesh));
+
+    this.map.targetDummies.forEach(d => {
+      if (!d.userData.isKnockedDown) {
+        if (d.userData.headMesh) candidates.push(d.userData.headMesh);
+        if (d.userData.torsoMesh) candidates.push(d.userData.torsoMesh);
+      }
+    });
+
+    if (this.bot && this.bot.isAlive && this.bot.mesh.visible) {
+      candidates.push(this.bot.head, this.bot.torso, this.bot.leftArm, this.bot.rightArm, this.bot.leftLeg, this.bot.rightLeg);
+    }
+
+    if (this.dummyBot && this.dummyBot.mesh && this.dummyBot.mesh.visible) {
+      candidates.push(this.dummyBot.head, this.dummyBot.torso, this.dummyBot.leftArm, this.dummyBot.rightArm, this.dummyBot.leftLeg, this.dummyBot.rightLeg);
+    }
+
+    if (this.mpClient && this.mpClient.remotePlayers) {
+      for (const rp of this.mpClient.remotePlayers.values()) {
+        if (rp.group && rp.group.visible) {
+          candidates.push(rp.head, rp.torso, rp.leftArm, rp.rightArm, rp.leftLeg, rp.rightLeg);
+        }
+      }
+    }
+
+    for (let i = this.activeRockets.length - 1; i >= 0; i--) {
+      const r = this.activeRockets[i];
+      r.lifetime -= delta;
+
+      // Gentle ballistic arc for high-speed rocket
+      r.velocity.y -= 1.8 * delta;
+
+      const step = r.velocity.clone().multiplyScalar(delta);
+      const stepDist = step.length();
+
+      // Emit rocket smoke & fire trail
+      r.trailTimer += delta;
+      if (r.trailTimer >= 0.016) {
+        this.particles.addRocketSmoke(r.position);
+        r.trailTimer = 0;
+      }
+
+      let detonated = false;
+
+      if (stepDist > 0.001) {
+        this.rpgRaycaster.set(r.position, step.clone().normalize());
+        this.rpgRaycaster.far = stepDist + 0.15;
+        const hits = this.rpgRaycaster.intersectObjects(candidates, false);
+
+        if (hits.length > 0) {
+          const hit = hits[0];
+          this.detonateRPGRocket(hit.point, r.isRemote);
+          detonated = true;
+        } else if (r.position.y + step.y <= 0.5) {
+          // Ground impact
+          const floorHit = r.position.clone().add(step);
+          floorHit.y = 0.5;
+          this.detonateRPGRocket(floorHit, r.isRemote);
+          detonated = true;
+        } else {
+          r.position.add(step);
+          r.mesh.position.copy(r.position);
+          r.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), r.velocity.clone().normalize());
+        }
+      }
+
+      if (!detonated && r.lifetime <= 0) {
+        this.detonateRPGRocket(r.position, r.isRemote);
+        detonated = true;
+      }
+
+      if (detonated) {
+        this.worldScene.remove(r.mesh);
+        r.mesh.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+        this.activeRockets.splice(i, 1);
+      }
+    }
+  }
+
+  // RPG Detonation: Max 75 damage, expanded 11.5m blast radius, shallower drop-off, NO self-damage to shooter
+  detonateRPGRocket(pos, isRemote = false) {
+    // 1. Audio & Visual FX
+    this.particles.addExplosion(pos);
+    this.audio.playExplosion();
+
+    // 2. Proximity Camera Shake (larger 30m radius)
+    const playerPos = this.controls.getPosition();
+    const playerDist = playerPos.distanceTo(pos);
+    if (playerDist < 30.0) {
+      const shakeFactor = Math.max(0, 1.0 - (playerDist / 30.0));
+      this.controls.addCameraShake(shakeFactor * 0.75);
+    }
+
+    // RPG Stats: 75 dmg at best (<= 3.0m), expanded 11.5m radius, gentle drop-off to 25 min
+    const calculateRPGImpact = (targetPos) => {
+      const dir = targetPos.clone().sub(pos);
+      const dist = dir.length();
+      const blastRadius = 11.5;
+      if (dist > blastRadius) return { damage: 0, impulse: new THREE.Vector3() };
+
+      // Full 75 damage up to 3.0m, shallow gentle drop-off to 25 at 11.5m
+      let damage = 75;
+      if (dist > 3.0) {
+        const t = (dist - 3.0) / (blastRadius - 3.0);
+        damage = Math.max(25, Math.round(75 - Math.pow(t, 1.15) * (75 - 25)));
+      }
+
+      // Launch vector away from explosion with strong upward vertical lift
+      if (dist < 0.001) {
+        dir.set(0, 1, 0);
+      } else {
+        dir.normalize();
+      }
+      dir.y = Math.min(1.0, Math.max(0.48, dir.y + 0.42));
+      dir.normalize();
+
+      // Launch impulse proportional to damage hit
+      const ratio = damage / 75.0;
+      const launchPower = ratio * 28.0;
+      const impulse = dir.clone().multiplyScalar(launchPower);
+
+      return { damage, impulse };
+    };
+
+    // 3. Bot Opponent (Solo matches)
+    if (this.bot && this.bot.isAlive) {
+      const bPos = this.bot.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+      const { damage, impulse } = calculateRPGImpact(bPos);
+      if (damage > 0) {
+        this.bot.takeDamage(damage);
+        this.bot.applyImpulse(impulse);
+        const isLethal = !this.bot.isAlive;
+        this.audio.playHitmarker(isLethal);
+        this.matchManager.showHitmarker(isLethal);
+        this.matchManager.showDamageNumber(damage, isLethal);
+      }
+    }
+
+    // 3b. Physics Dummy Bot in Testing Lab (Infinite Health & Physical Launch)
+    if (this.dummyBot && this.dummyBot.mesh && this.dummyBot.mesh.visible) {
+      const dbPos = this.dummyBot.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+      const { damage, impulse } = calculateRPGImpact(dbPos);
+      if (damage > 0) {
+        this.dummyBot.takeDamage(damage, false);
+        this.dummyBot.applyImpulse(impulse);
+        this.audio.playHitmarker(false);
+        this.matchManager.showHitmarker(false);
+        this.matchManager.showDamageNumber(damage, false);
+      }
+    }
+
+    // 4. Remote Opponent (2-Player 1v1 Matches)
+    if (this.matchManager.isTwoPlayer && this.matchManager.state === 'ROUND_ACTIVE' && this.mpClient) {
+      const oppId = this.matchManager.opponentId;
+      if (oppId && this.mpClient.remotePlayers.has(oppId)) {
+        const opp = this.mpClient.remotePlayers.get(oppId);
+        const oppPos = opp.group ? opp.group.position.clone().add(new THREE.Vector3(0, 0.9, 0)) : null;
+        if (oppPos) {
+          const { damage, impulse } = calculateRPGImpact(oppPos);
+          if (damage > 0) {
+            this.mpClient.sendInflictDamage(oppId, damage, false, impulse);
+            this.audio.playHitmarker(damage >= 75);
+            this.matchManager.showHitmarker(damage >= 75);
+            this.matchManager.showDamageNumber(damage, damage >= 75);
+          }
+        }
+      }
+    }
+
+    // 5. Target Dummies in Lobby Range
+    this.map.targetDummies.forEach(d => {
+      if (!d.userData.isKnockedDown) {
+        const dPos = d.position.clone().add(new THREE.Vector3(0, 0.8, 0));
+        const { damage } = calculateRPGImpact(dPos);
+        if (damage > 0) {
+          this.audio.playHitmarker(false);
+          this.matchManager.showHitmarker(false);
+          this.matchManager.showDamageNumber(damage, false);
+          this.map.hitTarget(d, false);
+        }
+      }
+    });
+
+    // 6. Local Player: Rocket Jump Launch ONLY (NO self-damage to the shooter!)
+    const pPos = this.controls.getPosition().clone().add(new THREE.Vector3(0, 0.9, 0));
+    const { damage: pDmg, impulse: pImpulse } = calculateRPGImpact(pPos);
+    if (pDmg > 0) {
+      if (isRemote) {
+        // Rocket was fired by opponent -> local player takes damage & launch impulse
+        this.controls.applyImpulse(pImpulse);
+        if (this.matchManager.state === 'ROUND_ACTIVE') {
+          this.matchManager.onPlayerDamaged(pDmg, false);
+        }
+      } else {
+        // Rocket was fired by local player -> NO self-damage, but provides launch impulse for rocket jumping!
+        this.controls.applyImpulse(pImpulse);
+      }
+    }
+  }
+
   updateHUDWeapon() {
     const ammoCount = document.getElementById('ammo-count');
     const scopeAmmo = document.getElementById('scope-ammo-val');
@@ -1319,7 +1680,9 @@ export class GameEngine {
     const loadoutBadge = document.getElementById('loadout-lock-badge');
 
     if (ammoCount) {
-      if (this.weaponSystem.currentSlot === 'AR') {
+      if (this.weaponSystem.currentSlot === 'RPG') {
+        ammoCount.textContent = `${this.weaponSystem.rpgAmmo} / ${this.weaponSystem.rpgMaxAmmo}`;
+      } else if (this.weaponSystem.currentSlot === 'AR') {
         ammoCount.textContent = `${this.weaponSystem.arAmmo} / ${this.weaponSystem.arMaxAmmo}`;
       } else if (this.weaponSystem.currentSlot === 'SNIPER') {
         ammoCount.textContent = `${this.weaponSystem.ammo} / ${this.weaponSystem.maxAmmo}`;
@@ -1331,13 +1694,19 @@ export class GameEngine {
     }
 
     if (scopeAmmo) {
-      scopeAmmo.textContent = this.weaponSystem.currentSlot === 'AR'
-        ? `${this.weaponSystem.arAmmo} / ${this.weaponSystem.arMaxAmmo}`
-        : `${this.weaponSystem.ammo} / ${this.weaponSystem.maxAmmo}`;
+      if (this.weaponSystem.currentSlot === 'RPG') {
+        scopeAmmo.textContent = `${this.weaponSystem.rpgAmmo} / ${this.weaponSystem.rpgMaxAmmo}`;
+      } else {
+        scopeAmmo.textContent = this.weaponSystem.currentSlot === 'AR'
+          ? `${this.weaponSystem.arAmmo} / ${this.weaponSystem.arMaxAmmo}`
+          : `${this.weaponSystem.ammo} / ${this.weaponSystem.maxAmmo}`;
+      }
     }
 
     if (slotName) {
-      if (this.weaponSystem.currentSlot === 'AR') {
+      if (this.weaponSystem.currentSlot === 'RPG') {
+        slotName.textContent = 'RPG-7 ROCKET LAUNCHER';
+      } else if (this.weaponSystem.currentSlot === 'AR') {
         slotName.textContent = 'M4A1 ASSAULT RIFLE';
       } else if (this.weaponSystem.currentSlot === 'SNIPER') {
         slotName.textContent = 'AWP BOLT-ACTION';
@@ -1358,20 +1727,29 @@ export class GameEngine {
     if (switchBtn) {
       const icon = switchBtn.querySelector('.btn-icon');
       const label = switchBtn.querySelector('.btn-label');
-      if (this.weaponSystem.currentSlot === 'AR' || this.weaponSystem.currentSlot === 'SNIPER') {
+      if (this.weaponSystem.currentSlot === 'AR' || this.weaponSystem.currentSlot === 'SNIPER' || this.weaponSystem.currentSlot === 'RPG') {
         if (icon) icon.textContent = '🗡️';
         if (label) label.textContent = 'KNIFE';
       } else if (this.weaponSystem.currentSlot === 'KNIFE') {
         if (icon) icon.textContent = '💣';
         if (label) label.textContent = 'GRENADE';
       } else if (this.weaponSystem.currentSlot === 'GRENADE') {
-        if (icon) icon.textContent = this.weaponSystem.primaryWeapon === 'AR' ? '⚡' : '🔫';
-        if (label) label.textContent = this.weaponSystem.primaryWeapon === 'AR' ? 'AR-15' : 'AWP';
+        let pIcon = '🔫';
+        let pLabel = 'AWP';
+        if (this.weaponSystem.primaryWeapon === 'RPG') {
+          pIcon = '🚀';
+          pLabel = 'RPG-7';
+        } else if (this.weaponSystem.primaryWeapon === 'AR') {
+          pIcon = '⚡';
+          pLabel = 'AR-15';
+        }
+        if (icon) icon.textContent = pIcon;
+        if (label) label.textContent = pLabel;
       }
     }
 
     // Update Weapon Selector Chips
-    const isPrimaryActive = this.weaponSystem.currentSlot === 'SNIPER' || this.weaponSystem.currentSlot === 'AR';
+    const isPrimaryActive = this.weaponSystem.currentSlot === 'SNIPER' || this.weaponSystem.currentSlot === 'AR' || this.weaponSystem.currentSlot === 'RPG';
     const chipSniper = document.getElementById('slot-chip-sniper');
     if (chipSniper) chipSniper.classList.toggle('active', isPrimaryActive);
     const chipKnife = document.getElementById('slot-chip-knife');
@@ -1425,6 +1803,12 @@ export class GameEngine {
       this.handleShoot();
     }
 
+    // Trigger buffered first shot the instant round goes active
+    if (this.matchManager.state === 'ROUND_ACTIVE' && this.pendingShot && this.weaponSystem.canShoot()) {
+      this.pendingShot = false;
+      this.handleShoot();
+    }
+
     // 1. Update FPS Movement Physics & Speed modifier
     const speedMod = this.weaponSystem.getSpeedModifier();
     const moveInfo = this.controls.update(delta, speedMod);
@@ -1447,8 +1831,31 @@ export class GameEngine {
     // 6. Update Match State Machine ("First to 6 Wins", Duel Pads, Bot AI)
     this.matchManager.update(delta);
 
-    // 7. Update Active Thrown Grenades & Aiming Trajectory
+    // Update Physics Dummy Bot in Testing Lab
+    if (this.dummyBot) {
+      this.dummyBot.update(delta);
+    }
+
+    // Check Testing Lab Portal & Leave Area pads
+    const playerPos = this.controls.getPosition();
+    if (this.matchManager.state === 'LOBBY' && this.map.testingEntrancePad) {
+      const pDist = Math.hypot(playerPos.x - this.map.testingEntrancePad.position.x, playerPos.z - this.map.testingEntrancePad.position.z);
+      if (pDist < 2.5) {
+        this.controls.teleport(new THREE.Vector3(0, 0.55, -188), new THREE.Vector3(0, 0.55, -205));
+        this.matchManager.enterTestingLab();
+      }
+    } else if (this.matchManager.state === 'TESTING_LAB' && this.map.testingExitPad) {
+      const pDist = Math.hypot(playerPos.x - this.map.testingExitPad.position.x, playerPos.z - this.map.testingExitPad.position.z);
+      if (pDist < 2.5) {
+        this.controls.teleport(new THREE.Vector3(0, 0.55, -84), new THREE.Vector3(0, 0.55, 0));
+        this.matchManager.leaveTestingLab();
+        if (this.dummyBot) this.dummyBot.reset();
+      }
+    }
+
+    // 7. Update Active Thrown Grenades & Aiming Trajectory & RPG Rockets
     this.updateActiveGrenades(delta);
+    this.updateActiveRockets(delta);
     this.updateGrenadeTrajectory();
 
     // 8. Update HUD dynamic indicators

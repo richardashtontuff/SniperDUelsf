@@ -12,11 +12,11 @@ export class WeaponSystem {
     this.vmRoot = new THREE.Group();
     this.vmScene.add(this.vmRoot);
 
-    // Primary weapon selection: 'SNIPER' or 'AR'
+    // Primary weapon selection: 'SNIPER', 'AR', or 'RPG'
     this.primaryWeapon = 'SNIPER';
 
     // Weapon state
-    this.currentSlot = 'SNIPER'; // 'SNIPER', 'AR', 'KNIFE', or 'GRENADE'
+    this.currentSlot = 'SNIPER'; // 'SNIPER', 'AR', 'RPG', 'KNIFE', or 'GRENADE'
     this.lastSlot = 'KNIFE';
     this.isSwitching = false;
     this.switchProgress = 1.0;
@@ -38,6 +38,12 @@ export class WeaponSystem {
     this.arFireCooldown = 0;
     this.arReloadDuration = 1.8;
     this.arDamage = 5;
+
+    // RPG-7 Rocket Launcher state - 1 Rocket, 75 Dmg max + Splash & Launch, 3s Reload
+    this.rpgMaxAmmo = 1;
+    this.rpgAmmo = 1;
+    this.rpgReloadDuration = 3.0; // Exact 3 second reload time required
+    this.rpgDamage = 75;
 
     // ADS (Aim Down Sights)
     this.isAiming = false;
@@ -70,6 +76,12 @@ export class WeaponSystem {
     this.arRestRot = new THREE.Euler(0.02, -0.04, 0.01);
     this.arAimPos = new THREE.Vector3(0.0, -0.152, -0.30);
     this.arAimRot = new THREE.Euler(0, 0, 0);
+
+    // RPG Sights & Positions (Shoulder-fired RPG aligns PGO-7 sight)
+    this.rpgRestPos = new THREE.Vector3(0.25, -0.21, -0.42);
+    this.rpgRestRot = new THREE.Euler(0.04, -0.05, 0.02);
+    this.rpgAimPos = new THREE.Vector3(0.065, -0.165, -0.32);
+    this.rpgAimRot = new THREE.Euler(0, 0, 0);
 
     this.knifeRestPos = new THREE.Vector3(0.26, -0.24, -0.42);
     this.knifeRestRot = new THREE.Euler(0.2, 0.4, -0.3);
@@ -105,14 +117,21 @@ export class WeaponSystem {
     this.arMesh.visible = false;
     this.vmRoot.add(this.arMesh);
 
-    // 3. Knife Viewmodel
+    // 3. RPG-7 Rocket Launcher Viewmodel
+    this.rpgMesh = AssetLoader.createProceduralRPG();
+    this.rpgMesh.position.copy(this.rpgRestPos);
+    this.rpgMesh.rotation.copy(this.rpgRestRot);
+    this.rpgMesh.visible = false;
+    this.vmRoot.add(this.rpgMesh);
+
+    // 4. Knife Viewmodel
     this.knifeMesh = AssetLoader.createProceduralKnife();
     this.knifeMesh.position.copy(this.knifeRestPos);
     this.knifeMesh.rotation.copy(this.knifeRestRot);
     this.knifeMesh.visible = false;
     this.vmRoot.add(this.knifeMesh);
 
-    // 4. Grenade Viewmodel
+    // 5. Grenade Viewmodel
     this.grenadeMesh = AssetLoader.createProceduralGrenade();
     this.grenadeMesh.position.copy(this.grenadeRestPos);
     this.grenadeMesh.rotation.copy(this.grenadeRestRot);
@@ -123,16 +142,16 @@ export class WeaponSystem {
 
   // Allows player to select primary weapon BEFORE THE GAME
   setPrimaryWeapon(type) {
-    if (type !== 'SNIPER' && type !== 'AR') return;
+    if (type !== 'SNIPER' && type !== 'AR' && type !== 'RPG') return;
     this.primaryWeapon = type;
-    if (this.currentSlot === 'SNIPER' || this.currentSlot === 'AR') {
+    if (this.currentSlot === 'SNIPER' || this.currentSlot === 'AR' || this.currentSlot === 'RPG') {
       this.equipSlot(type, true);
     }
   }
 
-  // Equips weapon slot ('SNIPER', 'AR', 'KNIFE', or 'GRENADE')
+  // Equips weapon slot ('SNIPER', 'AR', 'RPG', 'KNIFE', or 'GRENADE')
   equipSlot(slot, instant = false) {
-    if (slot === 'PRIMARY' || (slot === 'SNIPER' && this.primaryWeapon === 'AR')) {
+    if (slot === 'PRIMARY' || (slot === 'SNIPER' && (this.primaryWeapon === 'AR' || this.primaryWeapon === 'RPG'))) {
       slot = this.primaryWeapon;
     }
 
@@ -148,22 +167,32 @@ export class WeaponSystem {
     if (slot === 'SNIPER') {
       this.sniperMesh.visible = true;
       if (this.arMesh) this.arMesh.visible = false;
+      if (this.rpgMesh) this.rpgMesh.visible = false;
       this.knifeMesh.visible = false;
       this.grenadeMesh.visible = false;
     } else if (slot === 'AR') {
       this.sniperMesh.visible = false;
       if (this.arMesh) this.arMesh.visible = true;
+      if (this.rpgMesh) this.rpgMesh.visible = false;
+      this.knifeMesh.visible = false;
+      this.grenadeMesh.visible = false;
+    } else if (slot === 'RPG') {
+      this.sniperMesh.visible = false;
+      if (this.arMesh) this.arMesh.visible = false;
+      if (this.rpgMesh) this.rpgMesh.visible = true;
       this.knifeMesh.visible = false;
       this.grenadeMesh.visible = false;
     } else if (slot === 'KNIFE') {
       this.sniperMesh.visible = false;
       if (this.arMesh) this.arMesh.visible = false;
+      if (this.rpgMesh) this.rpgMesh.visible = false;
       this.knifeMesh.visible = true;
       this.grenadeMesh.visible = false;
       this.audio.playKnifeSlash();
     } else if (slot === 'GRENADE') {
       this.sniperMesh.visible = false;
       if (this.arMesh) this.arMesh.visible = false;
+      if (this.rpgMesh) this.rpgMesh.visible = false;
       this.knifeMesh.visible = false;
       this.grenadeMesh.visible = true;
       this.audio.playGrenadePin();
@@ -172,7 +201,7 @@ export class WeaponSystem {
 
   quickSwitch() {
     let nextSlot = this.primaryWeapon;
-    if (this.currentSlot === 'SNIPER' || this.currentSlot === 'AR') {
+    if (this.currentSlot === 'SNIPER' || this.currentSlot === 'AR' || this.currentSlot === 'RPG') {
       nextSlot = 'KNIFE';
     } else if (this.currentSlot === 'KNIFE') {
       nextSlot = 'GRENADE';
@@ -193,12 +222,21 @@ export class WeaponSystem {
   }
 
   setADS(aiming) {
-    if (this.currentSlot !== 'SNIPER' && this.currentSlot !== 'AR') return;
+    if (this.currentSlot !== 'SNIPER' && this.currentSlot !== 'AR' && this.currentSlot !== 'RPG') return;
     this.isAiming = aiming;
   }
 
   // Reload weapon (Key R)
   reload() {
+    if (this.currentSlot === 'RPG') {
+      if (this.rpgAmmo >= this.rpgMaxAmmo || this.isReloading) return;
+      this.isReloading = true;
+      this.reloadTimer = 0;
+      this.setADS(false);
+      this.audio.playRPGReload();
+      return;
+    }
+
     if (this.currentSlot === 'AR') {
       if (this.arAmmo >= this.arMaxAmmo || this.isReloading) return;
       this.isReloading = true;
@@ -219,7 +257,9 @@ export class WeaponSystem {
 
   // Attempt to fire weapon
   canShoot() {
-    if (this.currentSlot === 'AR') {
+    if (this.currentSlot === 'RPG') {
+      return !this.isReloading && this.rpgAmmo > 0;
+    } else if (this.currentSlot === 'AR') {
       return !this.isReloading && this.arAmmo > 0 && this.arFireCooldown <= 0;
     } else if (this.currentSlot === 'SNIPER') {
       return !this.isBolting && !this.isReloading && this.ammo > 0;
@@ -236,6 +276,46 @@ export class WeaponSystem {
     if (this.currentSlot === 'KNIFE') {
       this.slashKnife();
       return { fired: true, type: 'KNIFE' };
+    }
+
+    // RPG-7 Rocket Launcher Shoot Logic (Single-shot, 75 Dmg max + splash + launch)
+    if (this.currentSlot === 'RPG') {
+      if (this.rpgAmmo <= 0) {
+        this.audio.playEmptyDryFire();
+        this.reload();
+        return { fired: false, type: 'EMPTY' };
+      }
+
+      if (this.isReloading) {
+        return { fired: false, type: 'BUSY' };
+      }
+
+      this.rpgAmmo--;
+      this.audio.playRPGLaunch();
+
+      // Recoil
+      this.recoilPitch = 0.22;
+      this.recoilOffsetZ = 0.16;
+
+      // Hide warhead inside launcher viewmodel until reloaded
+      if (this.rpgMesh && this.rpgMesh.userData && this.rpgMesh.userData.warhead) {
+        this.rpgMesh.userData.warhead.visible = false;
+      }
+
+      // Auto-initiate 3.0-second reload after firing rocket
+      setTimeout(() => {
+        if (this.currentSlot === 'RPG' && !this.isReloading && this.rpgAmmo === 0) {
+          this.reload();
+        }
+      }, 350);
+
+      return {
+        fired: true,
+        type: 'RPG',
+        damage: 75,
+        isAiming: this.isAiming,
+        spread: 0.005
+      };
     }
 
     // AR Rapid Shoot Logic (30 Bullets, 5 Damage per shot)
@@ -350,6 +430,9 @@ export class WeaponSystem {
     }
     if (this.currentSlot === 'GRENADE') {
       return 1.15; // Tactical light explosive sprint
+    }
+    if (this.currentSlot === 'RPG') {
+      return this.isAiming ? 0.60 : 0.92;
     }
     if (this.currentSlot === 'AR') {
       return this.isAiming ? 0.68 : 1.0;
@@ -511,11 +594,67 @@ export class WeaponSystem {
           this.ammo = this.maxAmmo;
           if (mag) mag.position.y = -0.12;
         }
+      } else if (this.currentSlot === 'RPG') {
+        this.reloadTimer += delta;
+        const rProg = this.reloadTimer / this.rpgReloadDuration; // 3.0s reload
+        const warhead = this.rpgMesh && this.rpgMesh.userData ? this.rpgMesh.userData.warhead : null;
+
+        if (warhead) {
+          if (rProg < 0.35) {
+            warhead.visible = false;
+          } else if (rProg < 0.8) {
+            warhead.visible = true;
+            const insertFrac = (rProg - 0.35) / 0.45;
+            warhead.position.z = THREE.MathUtils.lerp(-0.75, -0.38, insertFrac);
+          } else {
+            warhead.visible = true;
+            warhead.position.z = -0.38;
+          }
+        }
+
+        if (this.reloadTimer >= this.rpgReloadDuration) {
+          this.isReloading = false;
+          this.rpgAmmo = this.rpgMaxAmmo;
+          if (warhead) {
+            warhead.visible = true;
+            warhead.position.z = -0.38;
+          }
+        }
       }
     }
 
     // 7. Weapon Inspect & Positioning
-    if (this.currentSlot === 'AR') {
+    if (this.currentSlot === 'RPG') {
+      // RPG VIEWMODEL
+      const restPos = this.rpgRestPos;
+      const aimPos = this.rpgAimPos;
+
+      const targetPos = new THREE.Vector3().lerpVectors(restPos, aimPos, this.adsProgress);
+      targetPos.x += this.swayCurrent.x + bobX;
+      targetPos.y += this.swayCurrent.y + bobY;
+      targetPos.z += this.recoilOffsetZ;
+
+      this.rpgMesh.position.copy(targetPos);
+
+      const targetRot = new THREE.Euler(
+        THREE.MathUtils.lerp(this.rpgRestRot.x, this.rpgAimRot.x, this.adsProgress) - this.recoilPitch * 0.45,
+        THREE.MathUtils.lerp(this.rpgRestRot.y, this.rpgAimRot.y, this.adsProgress) + this.swayCurrent.x * 2.0,
+        THREE.MathUtils.lerp(this.rpgRestRot.z, this.rpgAimRot.z, this.adsProgress)
+      );
+
+      if (this.isInspecting) {
+        this.inspectTimer += delta;
+        const inspectProgress = this.inspectTimer / this.inspectDuration;
+        const inspectAngle = Math.sin(inspectProgress * Math.PI) * 0.4;
+        targetRot.z += inspectAngle;
+        targetRot.x += inspectAngle * 0.15;
+        if (this.inspectTimer >= this.inspectDuration) {
+          this.isInspecting = false;
+        }
+      }
+
+      this.rpgMesh.rotation.copy(targetRot);
+    } else if (this.currentSlot === 'AR') {
       // AR VIEWMODEL
       const restPos = this.arRestPos;
       const aimPos = this.arAimPos;
@@ -650,13 +789,20 @@ export class WeaponSystem {
   resetStats() {
     this.ammo = this.maxAmmo;
     this.arAmmo = this.arMaxAmmo;
+    this.rpgAmmo = this.rpgMaxAmmo;
     this.arFireCooldown = 0;
     this.grenades = this.maxGrenades;
     this.isAimingThrow = false;
     this.isThrowingGrenade = false;
     this.throwAnimTimer = 0;
+    this.isSwitching = false;
+    this.switchProgress = 1.0;
     if (this.grenadeMesh && this.currentSlot === 'GRENADE') {
       this.grenadeMesh.visible = true;
+    }
+    if (this.rpgMesh && this.rpgMesh.userData && this.rpgMesh.userData.warhead) {
+      this.rpgMesh.userData.warhead.visible = true;
+      this.rpgMesh.userData.warhead.position.z = -0.38;
     }
     this.isBolting = false;
     this.isCyclingBolt = false;

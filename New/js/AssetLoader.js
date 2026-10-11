@@ -417,6 +417,240 @@ export class AssetLoader {
     return root;
   }
 
+  // Procedural RPG-7 Rocket Launcher (Shoulder-Fired Anti-Tank Launcher)
+  static createProceduralRPG(skinConfig = {}) {
+    const root = new THREE.Group();
+    root.name = 'RPGLauncher';
+
+    const tubeColor = skinConfig.primaryColor || 0x2b332b; // Dark military green
+    const woodColor = skinConfig.woodColor || 0x5a3e22; // Bakelite / wood heat shield
+    const metalColor = skinConfig.metalColor || 0x181a1c;
+    const rocketColor = skinConfig.rocketColor || 0x475e3e; // Olive drab warhead
+
+    const tubeMat = new THREE.MeshStandardMaterial({
+      color: tubeColor,
+      roughness: 0.5,
+      metalness: 0.6
+    });
+
+    const woodMat = new THREE.MeshStandardMaterial({
+      color: woodColor,
+      roughness: 0.65,
+      metalness: 0.15
+    });
+
+    const metalMat = new THREE.MeshStandardMaterial({
+      color: metalColor,
+      roughness: 0.35,
+      metalness: 0.85
+    });
+
+    const warheadMat = new THREE.MeshStandardMaterial({
+      color: rocketColor,
+      roughness: 0.45,
+      metalness: 0.4
+    });
+
+    const tipMat = new THREE.MeshStandardMaterial({
+      color: 0xcccccc,
+      roughness: 0.2,
+      metalness: 0.9
+    });
+
+    // 1. Main Tube (Cylinder, oriented along Z axis)
+    const tubeGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.75, 16);
+    tubeGeo.rotateX(Math.PI / 2);
+    const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+    tubeMesh.position.set(0, 0, 0);
+    root.add(tubeMesh);
+
+    // 2. Rear Venturi Exhaust Cone (Flared cone at back)
+    const exhaustGeo = new THREE.CylinderGeometry(0.045, 0.07, 0.2, 16);
+    exhaustGeo.rotateX(Math.PI / 2);
+    const exhaustMesh = new THREE.Mesh(exhaustGeo, metalMat);
+    exhaustMesh.position.set(0, 0, 0.45);
+    root.add(exhaustMesh);
+
+    // 3. Wood / Fiberglass Heat Shield (Middle section)
+    const heatShieldGeo = new THREE.CylinderGeometry(0.052, 0.052, 0.38, 16);
+    heatShieldGeo.rotateX(Math.PI / 2);
+    const heatShield = new THREE.Mesh(heatShieldGeo, woodMat);
+    heatShield.position.set(0, 0, 0.05);
+    root.add(heatShield);
+
+    // Heat shield reinforcing metal bands
+    const bandGeo = new THREE.CylinderGeometry(0.054, 0.054, 0.02, 16);
+    bandGeo.rotateX(Math.PI / 2);
+    const band1 = new THREE.Mesh(bandGeo, metalMat);
+    band1.position.set(0, 0, 0.22);
+    const band2 = new THREE.Mesh(bandGeo, metalMat);
+    band2.position.set(0, 0, -0.12);
+    root.add(band1);
+    root.add(band2);
+
+    // 4. Front Muzzle Ring
+    const muzzleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.04, 16);
+    muzzleGeo.rotateX(Math.PI / 2);
+    const muzzle = new THREE.Mesh(muzzleGeo, metalMat);
+    muzzle.position.set(0, 0, -0.38);
+    root.add(muzzle);
+
+    // 5. Handles & Trigger
+    const gripGeo = new THREE.BoxGeometry(0.035, 0.14, 0.05);
+    gripGeo.rotateX(-0.2);
+    const grip = new THREE.Mesh(gripGeo, woodMat);
+    grip.position.set(0, -0.1, 0.15);
+    root.add(grip);
+
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.05, 0.04), metalMat);
+    guard.position.set(0, -0.06, 0.18);
+    root.add(guard);
+
+    const frontGripGeo = new THREE.BoxGeometry(0.035, 0.12, 0.045);
+    frontGripGeo.rotateX(-0.15);
+    const frontGrip = new THREE.Mesh(frontGripGeo, woodMat);
+    frontGrip.position.set(0, -0.09, -0.16);
+    root.add(frontGrip);
+
+    // 6. PGO-7 Optical Scope Bracket & Sight (Mounted on left side)
+    const scopeMount = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.1), metalMat);
+    scopeMount.position.set(-0.05, 0.04, -0.05);
+    root.add(scopeMount);
+
+    const scopeTubeGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.18, 12);
+    scopeTubeGeo.rotateX(Math.PI / 2);
+    const scopeTube = new THREE.Mesh(scopeTubeGeo, metalMat);
+    scopeTube.position.set(-0.065, 0.08, -0.05);
+    root.add(scopeTube);
+
+    const eyecupGeo = new THREE.CylinderGeometry(0.03, 0.024, 0.05, 12);
+    eyecupGeo.rotateX(Math.PI / 2);
+    const eyecup = new THREE.Mesh(eyecupGeo, new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
+    eyecup.position.set(-0.065, 0.08, 0.06);
+    root.add(eyecup);
+
+    // 7. PG-7V Rocket Warhead (Loaded in the front of the launcher!)
+    const warheadGroup = new THREE.Group();
+    warheadGroup.position.set(0, 0, -0.38);
+
+    const stemGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.22, 12);
+    stemGeo.rotateX(Math.PI / 2);
+    const stem = new THREE.Mesh(stemGeo, metalMat);
+    stem.position.set(0, 0, -0.1);
+    warheadGroup.add(stem);
+
+    const flareGeo = new THREE.CylinderGeometry(0.075, 0.025, 0.14, 16);
+    flareGeo.rotateX(-Math.PI / 2);
+    const flare = new THREE.Mesh(flareGeo, warheadMat);
+    flare.position.set(0, 0, -0.22);
+    warheadGroup.add(flare);
+
+    const bulbGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.15, 16);
+    bulbGeo.rotateX(Math.PI / 2);
+    const bulb = new THREE.Mesh(bulbGeo, warheadMat);
+    bulb.position.set(0, 0, -0.36);
+    warheadGroup.add(bulb);
+
+    const noseGeo = new THREE.ConeGeometry(0.075, 0.22, 16);
+    noseGeo.rotateX(-Math.PI / 2);
+    const nose = new THREE.Mesh(noseGeo, warheadMat);
+    nose.position.set(0, 0, -0.54);
+    warheadGroup.add(nose);
+
+    const spikeGeo = new THREE.CylinderGeometry(0.008, 0.015, 0.1, 8);
+    spikeGeo.rotateX(Math.PI / 2);
+    const spike = new THREE.Mesh(spikeGeo, tipMat);
+    spike.position.set(0, 0, -0.68);
+    warheadGroup.add(spike);
+
+    root.add(warheadGroup);
+
+    root.userData = {
+      bodyMesh: tubeMesh,
+      warhead: warheadGroup,
+      heatShield: heatShield,
+      muzzlePos: new THREE.Vector3(0, 0, -1.0)
+    };
+
+    return root;
+  }
+
+  // Standalone PG-7V High Explosive Rocket Projectile for World Flight
+  static createProceduralRocketWarhead() {
+    const root = new THREE.Group();
+    root.name = 'RPGRocket';
+
+    const rocketMat = new THREE.MeshStandardMaterial({
+      color: 0x475e3e,
+      roughness: 0.45,
+      metalness: 0.4
+    });
+    const metalMat = new THREE.MeshStandardMaterial({
+      color: 0x222428,
+      roughness: 0.35,
+      metalness: 0.85
+    });
+    const motorMat = new THREE.MeshStandardMaterial({
+      color: 0xff6600,
+      emissive: 0xff4400,
+      emissiveIntensity: 0.9,
+      roughness: 0.2
+    });
+
+    // Motor body
+    const motorGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.45, 12);
+    motorGeo.rotateX(Math.PI / 2);
+    const motor = new THREE.Mesh(motorGeo, metalMat);
+    motor.position.set(0, 0, 0.15);
+    root.add(motor);
+
+    // Exhaust nozzle glowing fiery
+    const nozzleGeo = new THREE.CylinderGeometry(0.035, 0.045, 0.08, 12);
+    nozzleGeo.rotateX(Math.PI / 2);
+    const nozzle = new THREE.Mesh(nozzleGeo, motorMat);
+    nozzle.position.set(0, 0, 0.4);
+    root.add(nozzle);
+
+    // Tail stabilizer fins
+    for (let i = 0; i < 4; i++) {
+      const finGeo = new THREE.BoxGeometry(0.01, 0.14, 0.12);
+      const fin = new THREE.Mesh(finGeo, metalMat);
+      fin.rotation.z = (Math.PI / 2) * i;
+      fin.position.set(0, 0, 0.32);
+      root.add(fin);
+    }
+
+    // Warhead conical flare
+    const flareGeo = new THREE.CylinderGeometry(0.085, 0.035, 0.16, 16);
+    flareGeo.rotateX(-Math.PI / 2);
+    const flare = new THREE.Mesh(flareGeo, rocketMat);
+    flare.position.set(0, 0, -0.15);
+    root.add(flare);
+
+    // Main warhead cylinder
+    const bulbGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.16, 16);
+    bulbGeo.rotateX(Math.PI / 2);
+    const bulb = new THREE.Mesh(bulbGeo, rocketMat);
+    bulb.position.set(0, 0, -0.31);
+    root.add(bulb);
+
+    // Ogive nose cone
+    const noseGeo = new THREE.ConeGeometry(0.085, 0.25, 16);
+    noseGeo.rotateX(-Math.PI / 2);
+    const nose = new THREE.Mesh(noseGeo, rocketMat);
+    nose.position.set(0, 0, -0.51);
+    root.add(nose);
+
+    // Contact fuse spike
+    const spikeGeo = new THREE.CylinderGeometry(0.008, 0.016, 0.12, 8);
+    spikeGeo.rotateX(Math.PI / 2);
+    const spike = new THREE.Mesh(spikeGeo, metalMat);
+    spike.position.set(0, 0, -0.68);
+    root.add(spike);
+
+    return root;
+  }
+
   // Procedural Tactical Knife (Karambit / Tanto Blade)
   static createProceduralKnife(skinConfig = {}) {
     const root = new THREE.Group();

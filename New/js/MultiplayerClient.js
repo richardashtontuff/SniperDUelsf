@@ -181,13 +181,14 @@ export class MultiplayerClient {
     }));
   }
 
-  sendInflictDamage(targetId, damage, isHeadshot) {
+  sendInflictDamage(targetId, damage, isHeadshot, impulse = null) {
     if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({
       type: 'INFLICT_DAMAGE',
       targetId: targetId,
       damage: damage,
-      isHeadshot: isHeadshot
+      isHeadshot: isHeadshot,
+      impulse: impulse ? { x: impulse.x, y: impulse.y, z: impulse.z } : null
     }));
   }
 
@@ -368,6 +369,14 @@ export class MultiplayerClient {
         // Render remote player tracer and gunshot audio based on weapon type
         if (msg.weaponType === 'AR') {
           this.game.audio.playARRifleShot();
+        } else if (msg.weaponType === 'RPG') {
+          this.game.audio.playRPGLaunch();
+          if (this.game.spawnRemoteRocket) {
+            const start = new THREE.Vector3(msg.origin.x, msg.origin.y, msg.origin.z);
+            const dir = new THREE.Vector3(msg.direction.x, msg.direction.y, msg.direction.z);
+            this.game.spawnRemoteRocket(start, dir);
+          }
+          break;
         } else {
           this.game.audio.playSniperShot();
         }
@@ -380,6 +389,9 @@ export class MultiplayerClient {
       case 'DAMAGE_TAKEN':
         // Local player took damage from opponent
         this.game.matchManager.onPlayerDamaged(msg.damage, msg.isHeadshot);
+        if (msg.impulse && this.game.controls && this.game.controls.applyImpulse) {
+          this.game.controls.applyImpulse(new THREE.Vector3(msg.impulse.x, msg.impulse.y, msg.impulse.z));
+        }
         break;
 
       case 'HIT_CONFIRMED':

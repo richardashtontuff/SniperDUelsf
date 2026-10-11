@@ -747,7 +747,8 @@ function handleClientMessage(senderId, data) {
             attackerId: senderId,
             damage: data.damage,
             isHeadshot: data.isHeadshot,
-            remainingHealth: target.health
+            remainingHealth: target.health,
+            impulse: data.impulse || null
           }));
         }
 
