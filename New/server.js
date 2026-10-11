@@ -77,17 +77,17 @@ if (isPostgres) {
       poolConfig = {
         connectionString: dbUrl,
         connectionTimeoutMillis: 5000,
-        ssl: (process.env.PGSSL === 'true' || dbUrl.includes('sslmode=require') || dbUrl.includes('ssl=true')) ? { rejectUnauthorized: false } : undefined
+        ssl: { rejectUnauthorized: false }
       };
     } else {
       poolConfig = {
-        host: dbHost || 'localhost',
-        user: dbUser || 'postgres',
-        password: dbPassword || '',
+        host: dbHost,
+        user: dbUser,
+        password: dbPassword,
         database: dbName || 'sniper_duels',
-        port: dbPort || 5432,
+        port: Number(dbPort) || 5432,
         connectionTimeoutMillis: 5000,
-        ssl: process.env.PGSSL === 'false' ? false : (process.env.NODE_ENV === 'production' && dbHost !== 'localhost' ? { rejectUnauthorized: false } : undefined)
+        ssl: { rejectUnauthorized: false }
       };
     }
 
