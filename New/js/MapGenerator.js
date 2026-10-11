@@ -179,8 +179,17 @@ export class MapGenerator {
     rampGroup.add(rampMesh);
     parent.add(rampGroup);
 
-    this.createBox(x, y, z - d * 0.25, w, h * 0.5, d * 0.5, mat, parent);
-    this.createBox(x, y, z + d * 0.25, w, h * 0.9, d * 0.5, mat, parent);
+    // Create 8 micro-step colliders for smooth, snag-free ramp climbing
+    const numSteps = 8;
+    const stepD = d / numSteps;
+    for (let i = 0; i < numSteps; i++) {
+      const frac = (i + 1) / numSteps;
+      const stepH = h * frac;
+      const stepZ = (slopeDir === 'south')
+        ? (z - d / 2 + stepD * (i + 0.5))
+        : (z + d / 2 - stepD * (i + 0.5));
+      this.createBox(x, y, stepZ, w, stepH, stepD + 0.05, mat, parent);
+    }
   }
 
   createBarrier(x, y, z, w, h, color) {
@@ -308,6 +317,12 @@ export class MapGenerator {
     this.waterMesh = new THREE.Mesh(waterGeo, waterMat);
     this.waterMesh.position.set(0, 1.4, 15);
     this.arenaGroup.add(this.waterMesh);
+
+    // Smooth Walk-Out Pool Stairs & Ramps (Eliminates sunken pool trap!)
+    this.createRamp(0, 0.5, 32.5, 8, 1.5, 5, tileMat, this.arenaGroup, 'south');
+    this.createRamp(0, 0.5, -2.5, 8, 1.5, 5, tileMat, this.arenaGroup, 'north');
+    this.createBox(-9.5, 0.5, 15, 3.0, 0.75, 10, tileMat, this.arenaGroup);
+    this.createBox(9.5, 0.5, 15, 3.0, 0.75, 10, tileMat, this.arenaGroup);
 
     // Diving Boards (Blue & Orange Sniper Vantage Points!)
     const boardMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });

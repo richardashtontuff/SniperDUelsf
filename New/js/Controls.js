@@ -750,51 +750,107 @@ export class FPSControls {
     // Gravity
     this.velocity.y -= this.gravity * delta;
 
-    // 2. Perform Movement & Collision Resolution
+    // 2. Perform Movement & Collision Resolution (Smooth FPS Kinematics)
     const pos = this.yawObject.position;
     const deltaX = this.velocity.x * delta;
     const deltaZ = this.velocity.z * delta;
     const deltaY = this.velocity.y * delta;
+    const maxStepHeight = 0.55; // Allows smooth step climbing over curbs, ramps, studs
 
-    pos.x += deltaX;
-    this.updatePlayerBox();
-    if (this.checkHorizontalCollision()) {
-      pos.x -= deltaX;
-      this.velocity.x = 0;
-    }
-
-    pos.z += deltaZ;
-    this.updatePlayerBox();
-    if (this.checkHorizontalCollision()) {
-      pos.z -= deltaZ;
-      this.velocity.z = 0;
-    }
-
-    pos.y += deltaY;
-    this.updatePlayerBox();
-
-    // Ground check against map colliders
-    let grounded = false;
-    for (const collider of this.map.colliders) {
-      if (this.playerBox.intersectsBox(collider.box)) {
-        if (this.velocity.y < 0) {
-          pos.y = collider.box.max.y;
-          this.velocity.y = 0;
-          this.canJump = true;
-          grounded = true;
+    // A. Move X with Auto Step-Up and Wall Sliding
+    if (Math.abs(deltaX) > 0.0001) {
+      pos.x += deltaX;
+      this.updatePlayerBox();
+      const colX = this.getWallCollision(maxStepHeight);
+      if (colX) {
+        const stepTargetY = colX.box.max.y;
+        if (stepTargetY > pos.y && stepTargetY <= pos.y + maxStepHeight && !this.checkHeadroomAt(pos.x, stepTargetY, pos.z)) {
+          pos.y = stepTargetY;
           this.updatePlayerBox();
-        } else if (this.velocity.y > 0) {
-          pos.y = collider.box.min.y - this.playerHeight;
-          this.velocity.y = 0;
+        } else {
+          pos.x -= deltaX;
+          this.velocity.x = 0;
+          this.updatePlayerBox();
         }
       }
     }
 
-    if (pos.y < 0.5) {
-      pos.y = 0.5;
+    // B. Move Z with Auto Step-Up and Wall Sliding
+    if (Math.abs(deltaZ) > 0.0001) {
+      pos.z += deltaZ;
+      this.updatePlayerBox();
+      const colZ = this.getWallCollision(maxStepHeight);
+      if (colZ) {
+        const stepTargetY = colZ.box.max.y;
+        if (stepTargetY > pos.y && stepTargetY <= pos.y + maxStepHeight && !this.checkHeadroomAt(pos.x, stepTargetY, pos.z)) {
+          pos.y = stepTargetY;
+          this.updatePlayerBox();
+        } else {
+          pos.z -= deltaZ;
+          this.velocity.z = 0;
+          this.updatePlayerBox();
+        }
+      }
+    }
+
+    // C. Ground & Vertical Resolution (Highest valid surface under feet)
+    let highestGroundY = 0.5; // Base floor limit
+    const feetY = pos.y;
+    const footSpan = this.playerRadius * 0.75;
+
+    for (const collider of this.map.colliders) {
+      const b = collider.box;
+      // Is player horizontally over this collider?
+      if (pos.x + footSpan > b.min.x && pos.x - footSpan < b.max.x &&
+          pos.z + footSpan > b.min.z && pos.z - footSpan < b.max.z) {
+        // Must be near feet and not a high wall
+        if (b.max.y <= feetY + maxStepHeight && b.max.y >= feetY - 2.5) {
+          if (b.max.y > highestGroundY) {
+            highestGroundY = b.max.y;
+          }
+        }
+      }
+    }
+
+    let grounded = false;
+    if (pos.y <= highestGroundY + 0.08 && this.velocity.y <= 0) {
+      pos.y = highestGroundY;
       this.velocity.y = 0;
       this.canJump = true;
       grounded = true;
+    } else {
+      pos.y += deltaY;
+      if (pos.y <= highestGroundY) {
+        pos.y = highestGroundY;
+        this.velocity.y = 0;
+        this.canJump = true;
+        grounded = true;
+      }
+    }
+    this.updatePlayerBox();
+
+    // D. Anti-Stuck horizontal push-out protection
+    for (const collider of this.map.colliders) {
+      const b = collider.box;
+      if (b.max.y > pos.y + maxStepHeight && b.min.y < pos.y + this.playerHeight) {
+        const halfW = (b.max.x - b.min.x) * 0.5;
+        const halfD = (b.max.z - b.min.z) * 0.5;
+        const centerX = (b.min.x + b.max.x) * 0.5;
+        const centerZ = (b.min.z + b.max.z) * 0.5;
+        const overlapX = (this.playerRadius + halfW) - Math.abs(pos.x - centerX);
+        const overlapZ = (this.playerRadius + halfD) - Math.abs(pos.z - centerZ);
+
+        if (overlapX > 0 && overlapZ > 0) {
+          if (overlapX < overlapZ) {
+            pos.x += pos.x > centerX ? overlapX + 0.01 : -(overlapX + 0.01);
+            this.velocity.x = 0;
+          } else {
+            pos.z += pos.z > centerZ ? overlapZ + 0.01 : -(overlapZ + 0.01);
+            this.velocity.z = 0;
+          }
+          this.updatePlayerBox();
+        }
+      }
     }
 
     if (!grounded && Math.abs(this.velocity.y) > 0.5) {
@@ -814,20 +870,34 @@ export class FPSControls {
     this.playerBox.max.set(pos.x + this.playerRadius, pos.y + this.playerHeight, pos.z + this.playerRadius);
   }
 
-  // Only checks walls and obstacles above feet step-height, never the floor beneath the player
-  checkHorizontalCollision() {
-    const stepHeight = 0.4;
+  // Detects true wall obstacles above feet step-height
+  getWallCollision(stepHeight = 0.55) {
     const testBox = this.playerBox.clone();
     testBox.min.y += stepHeight;
 
     for (const collider of this.map.colliders) {
       if (collider.box.max.y <= this.yawObject.position.y + stepHeight) continue;
-
       if (testBox.intersectsBox(collider.box)) {
-        return true;
+        return collider;
       }
     }
+    return null;
+  }
+
+  // Ensures there is overhead clearance when stepping up
+  checkHeadroomAt(x, y, z) {
+    const headBox = new THREE.Box3(
+      new THREE.Vector3(x - this.playerRadius * 0.7, y + this.playerHeight - 0.2, z - this.playerRadius * 0.7),
+      new THREE.Vector3(x + this.playerRadius * 0.7, y + this.playerHeight + 0.1, z + this.playerRadius * 0.7)
+    );
+    for (const collider of this.map.colliders) {
+      if (headBox.intersectsBox(collider.box)) return true;
+    }
     return false;
+  }
+
+  checkHorizontalCollision() {
+    return this.getWallCollision(0.55) !== null;
   }
 
   checkCollision() {
