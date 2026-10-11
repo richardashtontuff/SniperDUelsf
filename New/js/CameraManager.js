@@ -47,19 +47,24 @@ export class CameraManager {
     this.renderer.setSize(w, h);
   }
 
-  updateADS(adsProgress, delta) {
+  updateADS(adsProgress, delta, weaponType = 'SNIPER') {
     const safeProgress = (typeof adsProgress === 'number' && !isNaN(adsProgress)) ? adsProgress : 0;
-    // Interpolate World Camera FOV for high magnification zoom
-    const targetFov = THREE.MathUtils.lerp(this.baseFov, this.scopedFov, safeProgress);
+    const isAR = weaponType === 'AR';
+
+    // Interpolate World Camera FOV: Sniper has high 20° zoom, AR has tactical 52° zoom
+    const targetFov = isAR 
+      ? THREE.MathUtils.lerp(this.baseFov, 52, safeProgress)
+      : THREE.MathUtils.lerp(this.baseFov, this.scopedFov, safeProgress);
+
     this.worldCamera.fov = isNaN(targetFov) ? this.baseFov : targetFov;
     this.worldCamera.updateProjectionMatrix();
 
-    // Update Scope DOM Overlay opacity
+    // Update Scope DOM Overlay opacity (Only for Sniper)
     if (!this.scopeOverlay) {
       this.scopeOverlay = document.getElementById('sniper-scope-overlay');
     }
     if (this.scopeOverlay) {
-      if (safeProgress > 0.6) {
+      if (!isAR && safeProgress > 0.6) {
         this.scopeOverlay.style.opacity = ((safeProgress - 0.6) / 0.4).toFixed(3);
         this.scopeOverlay.style.pointerEvents = 'none';
         this.scopeOverlay.style.display = 'block';
@@ -71,7 +76,7 @@ export class CameraManager {
   }
 
   // Dual-Pass Render
-  render(worldScene, vmScene = null) {
+  render(worldScene, vmScene = null, weaponType = 'SNIPER') {
     // Ensure world scene matrix is up to date
     this.worldCamera.updateMatrixWorld(true);
 
@@ -80,8 +85,8 @@ export class CameraManager {
     this.renderer.clear();
     this.renderer.render(worldScene, this.worldCamera);
 
-    // When scoped in ADS, skip viewmodel render pass so the rifle body never obstructs the scope aperture
-    if (this.worldCamera.fov < 48) {
+    // For sniper when fully scoped in, skip viewmodel render pass so the rifle body never obstructs the scope aperture
+    if (weaponType !== 'AR' && this.worldCamera.fov < 48) {
       return;
     }
 

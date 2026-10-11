@@ -12,7 +12,41 @@ import { MatchManager } from './MatchManager.js';
 import { MultiplayerClient } from './MultiplayerClient.js';
 import { AssetLoader } from './AssetLoader.js';
 
-class GameEngine {
+// Available weapons registry for scalable loadouts
+export const WEAPON_REGISTRY = [
+  {
+    id: 'SNIPER',
+    name: 'AWP Sniper Rifle',
+    category: 'PRIMARY WEAPON',
+    icon: '🎯',
+    color: '#00d2ff',
+    badge: '1-SHOT HEADSHOT',
+    damage: 100,
+    ammo: 5,
+    maxAmmo: 5,
+    rpm: 48,
+    fireMode: 'Bolt-Action',
+    optic: 'High-Power Scope',
+    description: 'Precision bolt-action sniper rifle. Instakill headshots, 5 rounds per magazine, high-magnification optical scope overlay.'
+  },
+  {
+    id: 'AR',
+    name: 'M4A1 Assault Rifle',
+    category: 'PRIMARY WEAPON',
+    icon: '⚡',
+    color: '#ffaa00',
+    badge: 'RAPID AUTO-FIRE',
+    damage: 5,
+    ammo: 30,
+    maxAmmo: 30,
+    rpm: 600,
+    fireMode: 'Full-Automatic',
+    optic: 'Reflex Holo Sight',
+    description: 'Rapid automatic tactical carbine. 30 bullets, 5 dmg per shot, 600 RPM. Aiming down sights tightens spread significantly.'
+  }
+];
+
+export class GameEngine {
   constructor() {
     this.container = document.getElementById('canvas-container');
 
@@ -173,7 +207,11 @@ class GameEngine {
 
     // Weapon Switching hotkeys (1, 2, Q)
     this.controls.onSlotSwitch = (slot) => {
-      this.weaponSystem.equipSlot(slot);
+      let targetSlot = slot;
+      if (targetSlot === 'SNIPER' || targetSlot === 'PRIMARY') {
+        targetSlot = this.weaponSystem.primaryWeapon;
+      }
+      this.weaponSystem.equipSlot(targetSlot);
       this.controls.currentWeaponSlot = this.weaponSystem.currentSlot;
       this.updateHUDWeapon();
     };
@@ -278,7 +316,10 @@ class GameEngine {
     const slotChips = document.querySelectorAll('.slot-chip');
     slotChips.forEach(chip => {
       bindAction(chip, () => {
-        const slot = chip.getAttribute('data-slot');
+        let slot = chip.getAttribute('data-slot');
+        if (slot === 'SNIPER') {
+          slot = this.weaponSystem.primaryWeapon;
+        }
         if (slot) {
           this.weaponSystem.equipSlot(slot);
           this.controls.currentWeaponSlot = this.weaponSystem.currentSlot;
@@ -296,6 +337,9 @@ class GameEngine {
         this.updateHUDWeapon();
       });
     }
+
+    // Initialize Dedicated Weapon Loadout & Inventory Modal
+    this.initLoadoutModal();
 
     // UI Buttons (Shop, Maps, Settings)
     const shopBtn = document.getElementById('shop-open-btn');
@@ -412,6 +456,116 @@ class GameEngine {
 
     // Initialize User Authentication System (Wasmer MySQL / LocalStorage)
     this.initAuthSystem();
+  }
+
+  // ==========================================
+  // WEAPON LOADOUT & INVENTORY MODAL (SCALABLE CELL GRID)
+  // ==========================================
+  initLoadoutModal() {
+    const modal = document.getElementById('loadout-modal');
+    const openBtn = document.getElementById('loadout-open-btn');
+    const closeBtn = document.getElementById('loadout-close-btn');
+    const gridContainer = document.getElementById('loadout-grid-container');
+    const activeTag = document.getElementById('loadout-active-tag');
+
+    const renderGrid = () => {
+      if (!gridContainer) return;
+      gridContainer.innerHTML = '';
+
+      WEAPON_REGISTRY.forEach(gun => {
+        const isEquipped = this.weaponSystem.primaryWeapon === gun.id;
+        const cell = document.createElement('div');
+        cell.className = `weapon-cell ${isEquipped ? 'equipped' : ''}`;
+        cell.id = `weapon-cell-${gun.id.toLowerCase()}`;
+        cell.innerHTML = `
+          <div class="weapon-cell-top">
+            <span class="weapon-cell-cat">${gun.category}</span>
+            <span class="weapon-cell-badge" style="border: 1px solid ${gun.color}66; color: ${gun.color}">${gun.badge}</span>
+          </div>
+          <div class="weapon-cell-main">
+            <div class="weapon-cell-icon">${gun.icon}</div>
+            <div>
+              <div class="weapon-cell-title" style="color: ${gun.color}">${gun.name}</div>
+              <div style="font-size: 11px; color: #8892b0; font-weight: 700; margin-top: 2px;">${gun.optic}</div>
+            </div>
+          </div>
+          <div class="weapon-cell-stats">
+            <div class="stat-item">
+              <span class="stat-label">DAMAGE</span>
+              <span class="stat-val">${gun.damage} HP</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">MAGAZINE</span>
+              <span class="stat-val">${gun.maxAmmo} RDS</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">FIRE RATE</span>
+              <span class="stat-val">${gun.rpm} RPM</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">OPERATION</span>
+              <span class="stat-val">${gun.fireMode}</span>
+            </div>
+          </div>
+          <div class="weapon-cell-desc">${gun.description}</div>
+          <button class="weapon-equip-btn" data-gun="${gun.id}">
+            ${isEquipped ? 'EQUIPPED ✓' : 'EQUIP WEAPON'}
+          </button>
+        `;
+
+        const equipBtn = cell.querySelector('.weapon-equip-btn');
+        const handleEquip = (e) => {
+          if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
+          if (this.matchManager.state === 'ROUND_ACTIVE') return;
+          this.weaponSystem.setPrimaryWeapon(gun.id);
+          renderGrid();
+          this.updateHUDWeapon();
+        };
+
+        equipBtn.addEventListener('click', handleEquip);
+        equipBtn.addEventListener('touchend', handleEquip, { passive: false });
+
+        gridContainer.appendChild(cell);
+      });
+
+      if (activeTag) {
+        const activeGun = WEAPON_REGISTRY.find(g => g.id === this.weaponSystem.primaryWeapon) || WEAPON_REGISTRY[0];
+        activeTag.textContent = `CURRENT: ${activeGun.name.toUpperCase()}`;
+        activeTag.style.color = activeGun.color;
+        activeTag.style.borderColor = activeGun.color;
+      }
+
+      const chip1 = document.getElementById('slot-chip-sniper');
+      if (chip1) {
+        const activeGun = WEAPON_REGISTRY.find(g => g.id === this.weaponSystem.primaryWeapon);
+        chip1.innerHTML = activeGun && activeGun.id === 'AR'
+          ? '<span class="chip-num">1</span> ⚡ AR-RIFLE'
+          : '<span class="chip-num">1</span> 🔫 AWP';
+      }
+    };
+
+    if (openBtn) {
+      const handleOpen = (e) => {
+        if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
+        if (this.matchManager.state === 'ROUND_ACTIVE') return;
+        try { document.exitPointerLock(); } catch (err) {}
+        renderGrid();
+        if (modal) modal.style.display = 'flex';
+      };
+      openBtn.addEventListener('click', handleOpen);
+      openBtn.addEventListener('touchend', handleOpen, { passive: false });
+    }
+
+    if (closeBtn) {
+      const handleClose = (e) => {
+        if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
+        if (modal) modal.style.display = 'none';
+      };
+      closeBtn.addEventListener('click', handleClose);
+      closeBtn.addEventListener('touchend', handleClose, { passive: false });
+    }
+
+    renderGrid();
   }
 
   // ==========================================
@@ -751,7 +905,7 @@ class GameEngine {
       if (hitObj.userData && hitObj.userData.isRemotePlayer) {
         if (this.matchManager.state === 'ROUND_ACTIVE') {
           const isHeadshot = hitObj.userData.isHeadshot === true;
-          const damage = isHeadshot ? 150 : 92;
+          const damage = shootResult.type === 'AR' ? 5 : (isHeadshot ? 150 : 92);
           this.particles.addImpact(hitPoint, hit.face ? hit.face.normal : new THREE.Vector3(0, 1, 0), 0xff3300, 14);
           this.mpClient.sendInflictDamage(hitObj.userData.playerId, damage, isHeadshot);
         }
@@ -762,7 +916,7 @@ class GameEngine {
       if (hitObj.userData && hitObj.userData.isBot) {
         if (this.matchManager.state === 'ROUND_ACTIVE') {
           const isHeadshot = hitObj.userData.isHeadshot === true;
-          const damage = isHeadshot ? 150 : 92; // Instakill headshots!
+          const damage = shootResult.type === 'AR' ? 5 : (isHeadshot ? 150 : 92);
           this.particles.addImpact(hitPoint, hit.face ? hit.face.normal : new THREE.Vector3(0, 1, 0), 0xff3300, 14);
           this.matchManager.onBotDamaged(damage, isHeadshot);
         }
@@ -775,7 +929,7 @@ class GameEngine {
       );
       if (targetDummy) {
         const isHeadshot = (hitObj === targetDummy.userData.headMesh);
-        const damage = isHeadshot ? 150 : 85;
+        const damage = shootResult.type === 'AR' ? 5 : (isHeadshot ? 150 : 85);
         this.audio.playHitmarker(isHeadshot);
         this.matchManager.showHitmarker(isHeadshot);
         this.matchManager.showDamageNumber(damage, isHeadshot);
@@ -1000,6 +1154,14 @@ class GameEngine {
           this.updateHUDWeapon();
         }
       }, 4000);
+    } else if (this.weaponSystem.grenades <= 0) {
+      // In active match, swap back to primary weapon after throw
+      setTimeout(() => {
+        if (this.weaponSystem.currentSlot === 'GRENADE') {
+          this.weaponSystem.equipSlot(this.weaponSystem.primaryWeapon);
+          this.updateHUDWeapon();
+        }
+      }, 550);
     }
   }
 
@@ -1154,9 +1316,12 @@ class GameEngine {
     const scopeAmmo = document.getElementById('scope-ammo-val');
     const slotName = document.getElementById('weapon-name');
     const boltNotice = document.getElementById('bolt-status');
+    const loadoutBadge = document.getElementById('loadout-lock-badge');
 
     if (ammoCount) {
-      if (this.weaponSystem.currentSlot === 'SNIPER') {
+      if (this.weaponSystem.currentSlot === 'AR') {
+        ammoCount.textContent = `${this.weaponSystem.arAmmo} / ${this.weaponSystem.arMaxAmmo}`;
+      } else if (this.weaponSystem.currentSlot === 'SNIPER') {
         ammoCount.textContent = `${this.weaponSystem.ammo} / ${this.weaponSystem.maxAmmo}`;
       } else if (this.weaponSystem.currentSlot === 'KNIFE') {
         ammoCount.textContent = '∞';
@@ -1166,11 +1331,15 @@ class GameEngine {
     }
 
     if (scopeAmmo) {
-      scopeAmmo.textContent = `${this.weaponSystem.ammo} / ${this.weaponSystem.maxAmmo}`;
+      scopeAmmo.textContent = this.weaponSystem.currentSlot === 'AR'
+        ? `${this.weaponSystem.arAmmo} / ${this.weaponSystem.arMaxAmmo}`
+        : `${this.weaponSystem.ammo} / ${this.weaponSystem.maxAmmo}`;
     }
 
     if (slotName) {
-      if (this.weaponSystem.currentSlot === 'SNIPER') {
+      if (this.weaponSystem.currentSlot === 'AR') {
+        slotName.textContent = 'M4A1 ASSAULT RIFLE';
+      } else if (this.weaponSystem.currentSlot === 'SNIPER') {
         slotName.textContent = 'AWP BOLT-ACTION';
       } else if (this.weaponSystem.currentSlot === 'KNIFE') {
         slotName.textContent = 'TACTICAL KNIFE';
@@ -1189,25 +1358,36 @@ class GameEngine {
     if (switchBtn) {
       const icon = switchBtn.querySelector('.btn-icon');
       const label = switchBtn.querySelector('.btn-label');
-      if (this.weaponSystem.currentSlot === 'SNIPER') {
+      if (this.weaponSystem.currentSlot === 'AR' || this.weaponSystem.currentSlot === 'SNIPER') {
         if (icon) icon.textContent = '🗡️';
         if (label) label.textContent = 'KNIFE';
       } else if (this.weaponSystem.currentSlot === 'KNIFE') {
         if (icon) icon.textContent = '💣';
         if (label) label.textContent = 'GRENADE';
       } else if (this.weaponSystem.currentSlot === 'GRENADE') {
-        if (icon) icon.textContent = '🔫';
-        if (label) label.textContent = 'AWP';
+        if (icon) icon.textContent = this.weaponSystem.primaryWeapon === 'AR' ? '⚡' : '🔫';
+        if (label) label.textContent = this.weaponSystem.primaryWeapon === 'AR' ? 'AR-15' : 'AWP';
       }
     }
 
     // Update Weapon Selector Chips
-    ['SNIPER', 'KNIFE', 'GRENADE'].forEach(slot => {
-      const chip = document.getElementById(`slot-chip-${slot.toLowerCase()}`);
-      if (chip) {
-        chip.classList.toggle('active', this.weaponSystem.currentSlot === slot);
-      }
-    });
+    const isPrimaryActive = this.weaponSystem.currentSlot === 'SNIPER' || this.weaponSystem.currentSlot === 'AR';
+    const chipSniper = document.getElementById('slot-chip-sniper');
+    if (chipSniper) chipSniper.classList.toggle('active', isPrimaryActive);
+    const chipKnife = document.getElementById('slot-chip-knife');
+    if (chipKnife) chipKnife.classList.toggle('active', this.weaponSystem.currentSlot === 'KNIFE');
+    const chipGrenade = document.getElementById('slot-chip-grenade');
+    if (chipGrenade) chipGrenade.classList.toggle('active', this.weaponSystem.currentSlot === 'GRENADE');
+
+    // In active match, hide Loadout button and close modal so no popup appears during the game
+    const loadoutOpenBtn = document.getElementById('loadout-open-btn');
+    const loadoutModal = document.getElementById('loadout-modal');
+    if (this.matchManager.state === 'ROUND_ACTIVE') {
+      if (loadoutOpenBtn) loadoutOpenBtn.style.display = 'none';
+      if (loadoutModal) loadoutModal.style.display = 'none';
+    } else {
+      if (loadoutOpenBtn) loadoutOpenBtn.style.display = 'inline-block';
+    }
 
     if (boltNotice) {
       if (this.weaponSystem.isBolting) {
@@ -1240,6 +1420,11 @@ class GameEngine {
     const delta = Math.min(this.clock.getDelta(), 0.1);
     const elapsedTime = this.clock.getElapsedTime();
 
+    // Automatic fire while holding mouse or touch button for AR-Rifle
+    if (this.controls.isShootingContinuous && this.weaponSystem.currentSlot === 'AR' && this.weaponSystem.canShoot()) {
+      this.handleShoot();
+    }
+
     // 1. Update FPS Movement Physics & Speed modifier
     const speedMod = this.weaponSystem.getSpeedModifier();
     const moveInfo = this.controls.update(delta, speedMod);
@@ -1250,8 +1435,8 @@ class GameEngine {
     const velLen = moveInfo ? moveInfo.velocityLength : 0;
     this.weaponSystem.update(delta, isMoving, isSprinting, velLen);
 
-    // 3. Update Camera Zoom for ADS
-    this.cameraManager.updateADS(this.weaponSystem.adsProgress, delta);
+    // 3. Update Camera Zoom for ADS (tactical 52° for AR, 20° high zoom for Sniper)
+    this.cameraManager.updateADS(this.weaponSystem.adsProgress, delta, this.weaponSystem.currentSlot);
 
     // 4. Update Particle Effects (tracers, sparks, ejected shells, confetti)
     this.particles.update(delta);
@@ -1270,7 +1455,7 @@ class GameEngine {
     this.updateHUDWeapon();
 
     // 9. Dual-Pass Render (World Scene + No-Clip Viewmodel)
-    this.cameraManager.render(this.worldScene, this.weaponSystem.vmScene);
+    this.cameraManager.render(this.worldScene, this.weaponSystem.vmScene, this.weaponSystem.currentSlot);
   }
 }
 

@@ -76,6 +76,7 @@ export class FPSControls {
     this.joystickTouchId = null;
     this.joystickCenter = { x: 0, y: 0 };
     this.isTouchADS = false;
+    this.isShootingContinuous = false;
 
     // Callbacks
     this.onShoot = null;
@@ -243,6 +244,10 @@ export class FPSControls {
         if (this.onGrenadeThrow) this.onGrenadeThrow();
       }
 
+      if (e.button === 0) {
+        this.isShootingContinuous = false;
+      }
+
       if (this.isDragging && (this.dragPointerId === e.pointerId || e.pointerType === 'mouse')) {
         this.isDragging = false;
         this.dragPointerId = null;
@@ -260,6 +265,7 @@ export class FPSControls {
     });
 
     window.addEventListener('pointercancel', (e) => {
+      this.isShootingContinuous = false;
       if (this.isHoldingGrenade) {
         this.isHoldingGrenade = false;
         if (this.onGrenadeAim) this.onGrenadeAim(false);
@@ -282,14 +288,19 @@ export class FPSControls {
         return;
       }
 
-      if (e.button === 0 && this.onShoot) {
-        this.onShoot();
+      if (e.button === 0) {
+        this.isShootingContinuous = true;
+        if (this.onShoot) this.onShoot();
       } else if (e.button === 2 && this.onADS) {
         this.onADS(true);
       }
     });
 
     window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) {
+        this.isShootingContinuous = false;
+      }
+
       if (!this.isGameActive || !this.isLocked) return;
 
       if (this.currentWeaponSlot === 'GRENADE' && e.button === 0) {
@@ -313,7 +324,7 @@ export class FPSControls {
       if (!this.isGameActive) return;
       if (this.onSlotSwitch) {
         if (e.deltaY < 0) {
-          this.onSlotSwitch('SNIPER');
+          this.onSlotSwitch('PRIMARY');
         } else if (e.deltaY > 0) {
           this.onSlotSwitch('KNIFE');
         }
@@ -438,6 +449,7 @@ export class FPSControls {
           this.isHoldingGrenade = true;
           if (this.onGrenadeAim) this.onGrenadeAim(true);
         } else {
+          this.isShootingContinuous = true;
           if (this.onShoot) this.onShoot();
         }
       };
@@ -445,6 +457,7 @@ export class FPSControls {
       const handleFireEnd = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        this.isShootingContinuous = false;
         if (this.isHoldingGrenade) {
           this.isHoldingGrenade = false;
           if (this.onGrenadeAim) this.onGrenadeAim(false);
@@ -497,7 +510,7 @@ export class FPSControls {
 
     // Slot switching (checks both key and code for international layout support)
     if (e.key === '1' || e.code === 'Digit1' || e.code === 'Numpad1') {
-      if (this.onSlotSwitch) this.onSlotSwitch('SNIPER');
+      if (this.onSlotSwitch) this.onSlotSwitch('PRIMARY');
       return;
     }
     if (e.key === '2' || e.code === 'Digit2' || e.code === 'Numpad2') {

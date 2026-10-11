@@ -204,6 +204,219 @@ export class AssetLoader {
     return root;
   }
 
+  // Procedural Tactical Assault Rifle (AR-15 / M4 Carbine / SCAR Hybrid)
+  static createProceduralAR(skinConfig = {}) {
+    const root = new THREE.Group();
+    root.name = 'AssaultRifle';
+
+    const baseColor = skinConfig.primaryColor || 0x22242a;
+    const accentColor = skinConfig.accentColor || 0xff6600;
+    const metalColor = skinConfig.metalColor || 0x141619;
+    const magColor = skinConfig.magColor || 0x2e3238;
+
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: baseColor,
+      roughness: 0.42,
+      metalness: 0.35
+    });
+
+    const accentMat = new THREE.MeshStandardMaterial({
+      color: accentColor,
+      roughness: 0.35,
+      metalness: 0.6,
+      emissive: skinConfig.emissive ? accentColor : 0x000000,
+      emissiveIntensity: skinConfig.emissive ? 0.35 : 0
+    });
+
+    const metalMat = new THREE.MeshStandardMaterial({
+      color: metalColor,
+      roughness: 0.28,
+      metalness: 0.88
+    });
+
+    const magMat = new THREE.MeshStandardMaterial({
+      color: magColor,
+      roughness: 0.5,
+      metalness: 0.4
+    });
+
+    const reticleMat = new THREE.MeshBasicMaterial({
+      color: 0xff1133,
+      transparent: true,
+      opacity: 0.95
+    });
+
+    // 1. Lower Receiver
+    const lowerGeo = new THREE.BoxGeometry(0.07, 0.08, 0.28);
+    const lowerMesh = new THREE.Mesh(lowerGeo, bodyMat);
+    lowerMesh.position.set(0, -0.01, -0.05);
+    root.add(lowerMesh);
+
+    // 2. Upper Receiver with Picatinny Top Rail
+    const upperGeo = new THREE.BoxGeometry(0.072, 0.075, 0.32);
+    const upperMesh = new THREE.Mesh(upperGeo, bodyMat);
+    upperMesh.position.set(0, 0.05, -0.06);
+    root.add(upperMesh);
+
+    const railGeo = new THREE.BoxGeometry(0.05, 0.015, 0.38);
+    const railMesh = new THREE.Mesh(railGeo, metalMat);
+    railMesh.position.set(0, 0.095, -0.07);
+    root.add(railMesh);
+
+    // Accent side stripe
+    const stripeGeo = new THREE.BoxGeometry(0.075, 0.02, 0.3);
+    const stripeMesh = new THREE.Mesh(stripeGeo, accentMat);
+    stripeMesh.position.set(0, 0.045, -0.06);
+    root.add(stripeMesh);
+
+    // 3. Handguard / Quad-Rail Shroud
+    const handguardGeo = new THREE.BoxGeometry(0.068, 0.072, 0.36);
+    const handguardMesh = new THREE.Mesh(handguardGeo, bodyMat);
+    handguardMesh.position.set(0, 0.04, -0.38);
+    root.add(handguardMesh);
+
+    // Handguard rails (top, bottom)
+    const topHgRail = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.35), metalMat);
+    topHgRail.position.set(0, 0.08, -0.38);
+    root.add(topHgRail);
+
+    const botHgRail = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.32), metalMat);
+    botHgRail.position.set(0, 0.0, -0.38);
+    root.add(botHgRail);
+
+    // 4. Barrel
+    const barrelGeo = new THREE.CylinderGeometry(0.015, 0.017, 0.42, 12);
+    barrelGeo.rotateX(Math.PI / 2);
+    const barrelMesh = new THREE.Mesh(barrelGeo, metalMat);
+    barrelMesh.position.set(0, 0.04, -0.66);
+    root.add(barrelMesh);
+
+    // Gas Block
+    const gasBlock = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.04), metalMat);
+    gasBlock.position.set(0, 0.06, -0.58);
+    root.add(gasBlock);
+
+    // Birdcage Flash Hider / Muzzle Brake
+    const brakeGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.09, 10);
+    brakeGeo.rotateX(Math.PI / 2);
+    const brakeMesh = new THREE.Mesh(brakeGeo, metalMat);
+    brakeMesh.position.set(0, 0.04, -0.9);
+    root.add(brakeMesh);
+
+    // 5. Curved 30-Round STANAG Magazine
+    const magGroup = new THREE.Group();
+    magGroup.name = 'Magazine';
+    const magGeo = new THREE.BoxGeometry(0.052, 0.22, 0.095);
+    const magMesh = new THREE.Mesh(magGeo, magMat);
+    magMesh.position.set(0, -0.11, -0.1);
+    magMesh.rotation.x = 0.16;
+    magGroup.add(magMesh);
+
+    // Mag baseplate & ribs
+    const magBase = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.02, 0.105), metalMat);
+    magBase.position.set(0, -0.21, -0.08);
+    magBase.rotation.x = 0.16;
+    magGroup.add(magBase);
+
+    for (let r = 0; r < 3; r++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.01, 0.088), accentMat);
+      rib.position.set(0, -0.06 - r * 0.045, -0.11 + r * 0.008);
+      rib.rotation.x = 0.16;
+      magGroup.add(rib);
+    }
+    root.add(magGroup);
+
+    // 6. Pistol Grip
+    const gripGeo = new THREE.BoxGeometry(0.05, 0.16, 0.065);
+    const gripMesh = new THREE.Mesh(gripGeo, bodyMat);
+    gripMesh.position.set(0, -0.1, 0.08);
+    gripMesh.rotation.x = -0.32;
+    root.add(gripMesh);
+
+    // 7. Tactical Crane Buttstock & Buffer Tube
+    const tubeGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.22, 10);
+    tubeGeo.rotateX(Math.PI / 2);
+    const tubeMesh = new THREE.Mesh(tubeGeo, metalMat);
+    tubeMesh.position.set(0, 0.04, 0.2);
+    root.add(tubeMesh);
+
+    const stockGeo = new THREE.BoxGeometry(0.065, 0.14, 0.24);
+    const stockMesh = new THREE.Mesh(stockGeo, bodyMat);
+    stockMesh.position.set(0, 0.01, 0.28);
+    root.add(stockMesh);
+
+    const padGeo = new THREE.BoxGeometry(0.068, 0.15, 0.025);
+    const padMesh = new THREE.Mesh(padGeo, metalMat);
+    padMesh.position.set(0, 0.01, 0.4);
+    root.add(padMesh);
+
+    // 8. Holographic Optic Sight (Reflex Sight)
+    const opticGroup = new THREE.Group();
+    opticGroup.name = 'HoloSight';
+
+    // Base clamp
+    const opticBase = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.02, 0.12), metalMat);
+    opticBase.position.set(0, 0.11, -0.12);
+    opticGroup.add(opticBase);
+
+    // Protective hood
+    const hoodLeft = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.065, 0.11), metalMat);
+    hoodLeft.position.set(-0.032, 0.145, -0.12);
+    opticGroup.add(hoodLeft);
+
+    const hoodRight = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.065, 0.11), metalMat);
+    hoodRight.position.set(0.032, 0.145, -0.12);
+    opticGroup.add(hoodRight);
+
+    const hoodTop = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.01, 0.11), metalMat);
+    hoodTop.position.set(0, 0.175, -0.12);
+    opticGroup.add(hoodTop);
+
+    // Glass Lens
+    const lensGeo = new THREE.PlaneGeometry(0.052, 0.052);
+    const lensMat = new THREE.MeshStandardMaterial({
+      color: 0x22ffff,
+      transparent: true,
+      opacity: 0.35,
+      roughness: 0.1,
+      metalness: 0.9,
+      side: THREE.DoubleSide
+    });
+    const lensMesh = new THREE.Mesh(lensGeo, lensMat);
+    lensMesh.position.set(0, 0.145, -0.12);
+    opticGroup.add(lensMesh);
+
+    // Illuminated Red Center Dot Reticle
+    const dotGeo = new THREE.RingGeometry(0.003, 0.007, 12);
+    const dotMesh = new THREE.Mesh(dotGeo, reticleMat);
+    dotMesh.position.set(0, 0.145, -0.121);
+    opticGroup.add(dotMesh);
+
+    root.add(opticGroup);
+
+    // 9. Flip-up Front Sight
+    const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.05, 0.02), metalMat);
+    frontSight.position.set(0, 0.105, -0.54);
+    root.add(frontSight);
+
+    // 10. Ejection Port & Shell Deflector
+    const ejectPort = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.035, 0.075), metalMat);
+    ejectPort.position.set(0.038, 0.05, -0.06);
+    root.add(ejectPort);
+
+    root.userData = {
+      bodyMesh: lowerMesh,
+      upperMesh: upperMesh,
+      stripeMesh: stripeMesh,
+      barrelMesh: barrelMesh,
+      magazine: magGroup,
+      opticGroup: opticGroup,
+      muzzlePos: new THREE.Vector3(0, 0.04, -0.95)
+    };
+
+    return root;
+  }
+
   // Procedural Tactical Knife (Karambit / Tanto Blade)
   static createProceduralKnife(skinConfig = {}) {
     const root = new THREE.Group();

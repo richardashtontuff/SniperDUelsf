@@ -365,8 +365,12 @@ export class MultiplayerClient {
         break;
 
       case 'REMOTE_FIRE':
-        // Render remote player tracer and gunshot audio
-        this.game.audio.playSniperShot();
+        // Render remote player tracer and gunshot audio based on weapon type
+        if (msg.weaponType === 'AR') {
+          this.game.audio.playARRifleShot();
+        } else {
+          this.game.audio.playSniperShot();
+        }
         const start = new THREE.Vector3(msg.origin.x, msg.origin.y, msg.origin.z);
         const dir = new THREE.Vector3(msg.direction.x, msg.direction.y, msg.direction.z);
         const end = start.clone().addScaledVector(dir, 150);

@@ -88,6 +88,81 @@ export class AudioSystem {
     noiseNode.start(now);
   }
 
+  // Rapid punchy Assault Rifle (AR) gunshot
+  playARRifleShot() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    // 1. Sharp supersonic muzzle crack
+    const crackOsc = this.ctx.createOscillator();
+    const crackGain = this.ctx.createGain();
+    crackOsc.type = 'sawtooth';
+    crackOsc.frequency.setValueAtTime(1800, now);
+    crackOsc.frequency.exponentialRampToValueAtTime(160, now + 0.04);
+    crackGain.gain.setValueAtTime(0.75, now);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    crackOsc.connect(crackGain);
+    crackGain.connect(this.masterGain);
+    crackOsc.start(now);
+    crackOsc.stop(now + 0.05);
+
+    // 2. Punchy rifle body blast (tight decay for rapid automatic firing)
+    const bodyOsc = this.ctx.createOscillator();
+    const bodyGain = this.ctx.createGain();
+    bodyOsc.type = 'triangle';
+    bodyOsc.frequency.setValueAtTime(260, now);
+    bodyOsc.frequency.exponentialRampToValueAtTime(55, now + 0.12);
+    bodyGain.gain.setValueAtTime(0.8, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    bodyOsc.connect(bodyGain);
+    bodyGain.connect(this.masterGain);
+    bodyOsc.start(now);
+    bodyOsc.stop(now + 0.16);
+
+    // 3. Compact mechanical chamber noise
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.14);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.035));
+    }
+    const noiseNode = this.ctx.createBufferSource();
+    noiseNode.buffer = noiseBuffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2200, now);
+    filter.Q.setValueAtTime(1.8, now);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.55, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+    noiseNode.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain);
+    noiseNode.start(now);
+  }
+
+  // Fast tactical AR reload sequence (mag drop, click-in, bolt slap)
+  playARRifleReload() {
+    this.ensureContext();
+    if (!this.ctx) return;
+    // Mag drop (t = 0.2s)
+    setTimeout(() => {
+      this.playMetallicClick(1200, 600, 0.06, 0.35);
+    }, 200);
+    // Mag insert (t = 0.85s)
+    setTimeout(() => {
+      this.playMetallicClick(1800, 1100, 0.08, 0.5);
+    }, 850);
+    // Bolt release / charging handle snap (t = 1.35s)
+    setTimeout(() => {
+      this.playMetallicClick(2400, 900, 0.07, 0.6);
+    }, 1350);
+  }
+
   // Bolt-action sequence: metallic lift & pull back, then push forward & lock
   playBoltAction() {
     this.ensureContext();

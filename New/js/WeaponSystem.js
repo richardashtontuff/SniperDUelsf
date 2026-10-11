@@ -12,8 +12,11 @@ export class WeaponSystem {
     this.vmRoot = new THREE.Group();
     this.vmScene.add(this.vmRoot);
 
+    // Primary weapon selection: 'SNIPER' or 'AR'
+    this.primaryWeapon = 'SNIPER';
+
     // Weapon state
-    this.currentSlot = 'SNIPER'; // 'SNIPER' or 'KNIFE'
+    this.currentSlot = 'SNIPER'; // 'SNIPER', 'AR', 'KNIFE', or 'GRENADE'
     this.lastSlot = 'KNIFE';
     this.isSwitching = false;
     this.switchProgress = 1.0;
@@ -27,6 +30,14 @@ export class WeaponSystem {
     this.isReloading = false;
     this.reloadTimer = 0;
     this.reloadDuration = 2.2;
+
+    // Assault Rifle (AR) state - 30 Bullets, 5 Dmg per shot, Rapid Auto-Fire
+    this.arMaxAmmo = 30;
+    this.arAmmo = 30;
+    this.arFireRate = 0.1; // 10 rounds/sec = 600 RPM
+    this.arFireCooldown = 0;
+    this.arReloadDuration = 1.8;
+    this.arDamage = 5;
 
     // ADS (Aim Down Sights)
     this.isAiming = false;
@@ -53,6 +64,12 @@ export class WeaponSystem {
     this.sniperRestRot = new THREE.Euler(0.04, -0.06, 0.02);
     this.sniperAimPos = new THREE.Vector3(0.0, -0.125, -0.25); // Aligns scope directly with camera eye
     this.sniperAimRot = new THREE.Euler(0, 0, 0);
+
+    // AR Sights & Positions (Optic Reflex Sight aligns with camera center)
+    this.arRestPos = new THREE.Vector3(0.22, -0.20, -0.42);
+    this.arRestRot = new THREE.Euler(0.02, -0.04, 0.01);
+    this.arAimPos = new THREE.Vector3(0.0, -0.152, -0.30);
+    this.arAimRot = new THREE.Euler(0, 0, 0);
 
     this.knifeRestPos = new THREE.Vector3(0.26, -0.24, -0.42);
     this.knifeRestRot = new THREE.Euler(0.2, 0.4, -0.3);
@@ -81,14 +98,21 @@ export class WeaponSystem {
     this.sniperMesh.rotation.copy(this.sniperRestRot);
     this.vmRoot.add(this.sniperMesh);
 
-    // 2. Knife Viewmodel
+    // 2. Tactical Assault Rifle (AR) Viewmodel
+    this.arMesh = AssetLoader.createProceduralAR();
+    this.arMesh.position.copy(this.arRestPos);
+    this.arMesh.rotation.copy(this.arRestRot);
+    this.arMesh.visible = false;
+    this.vmRoot.add(this.arMesh);
+
+    // 3. Knife Viewmodel
     this.knifeMesh = AssetLoader.createProceduralKnife();
     this.knifeMesh.position.copy(this.knifeRestPos);
     this.knifeMesh.rotation.copy(this.knifeRestRot);
     this.knifeMesh.visible = false;
     this.vmRoot.add(this.knifeMesh);
 
-    // 3. Grenade Viewmodel
+    // 4. Grenade Viewmodel
     this.grenadeMesh = AssetLoader.createProceduralGrenade();
     this.grenadeMesh.position.copy(this.grenadeRestPos);
     this.grenadeMesh.rotation.copy(this.grenadeRestRot);
@@ -97,8 +121,21 @@ export class WeaponSystem {
     this.vmRoot.add(this.grenadeMesh);
   }
 
-  // Equips weapon slot ('SNIPER', 'KNIFE', or 'GRENADE')
+  // Allows player to select primary weapon BEFORE THE GAME
+  setPrimaryWeapon(type) {
+    if (type !== 'SNIPER' && type !== 'AR') return;
+    this.primaryWeapon = type;
+    if (this.currentSlot === 'SNIPER' || this.currentSlot === 'AR') {
+      this.equipSlot(type, true);
+    }
+  }
+
+  // Equips weapon slot ('SNIPER', 'AR', 'KNIFE', or 'GRENADE')
   equipSlot(slot, instant = false) {
+    if (slot === 'PRIMARY' || (slot === 'SNIPER' && this.primaryWeapon === 'AR')) {
+      slot = this.primaryWeapon;
+    }
+
     if (this.currentSlot === slot && !instant) return;
     if (this.isReloading) this.isReloading = false;
     if (this.isAiming) this.setADS(false);
@@ -110,15 +147,23 @@ export class WeaponSystem {
 
     if (slot === 'SNIPER') {
       this.sniperMesh.visible = true;
+      if (this.arMesh) this.arMesh.visible = false;
+      this.knifeMesh.visible = false;
+      this.grenadeMesh.visible = false;
+    } else if (slot === 'AR') {
+      this.sniperMesh.visible = false;
+      if (this.arMesh) this.arMesh.visible = true;
       this.knifeMesh.visible = false;
       this.grenadeMesh.visible = false;
     } else if (slot === 'KNIFE') {
       this.sniperMesh.visible = false;
+      if (this.arMesh) this.arMesh.visible = false;
       this.knifeMesh.visible = true;
       this.grenadeMesh.visible = false;
       this.audio.playKnifeSlash();
     } else if (slot === 'GRENADE') {
       this.sniperMesh.visible = false;
+      if (this.arMesh) this.arMesh.visible = false;
       this.knifeMesh.visible = false;
       this.grenadeMesh.visible = true;
       this.audio.playGrenadePin();
@@ -126,13 +171,13 @@ export class WeaponSystem {
   }
 
   quickSwitch() {
-    let nextSlot = 'SNIPER';
-    if (this.currentSlot === 'SNIPER') {
+    let nextSlot = this.primaryWeapon;
+    if (this.currentSlot === 'SNIPER' || this.currentSlot === 'AR') {
       nextSlot = 'KNIFE';
     } else if (this.currentSlot === 'KNIFE') {
       nextSlot = 'GRENADE';
     } else {
-      nextSlot = 'SNIPER';
+      nextSlot = this.primaryWeapon;
     }
     this.equipSlot(nextSlot);
   }
@@ -148,24 +193,35 @@ export class WeaponSystem {
   }
 
   setADS(aiming) {
-    if (this.currentSlot !== 'SNIPER') return;
+    if (this.currentSlot !== 'SNIPER' && this.currentSlot !== 'AR') return;
     this.isAiming = aiming;
   }
 
   // Reload weapon (Key R)
   reload() {
-    if (this.currentSlot !== 'SNIPER') return;
-    if (this.ammo >= this.maxAmmo || this.isReloading || this.isBolting) return;
+    if (this.currentSlot === 'AR') {
+      if (this.arAmmo >= this.arMaxAmmo || this.isReloading) return;
+      this.isReloading = true;
+      this.reloadTimer = 0;
+      this.setADS(false);
+      this.audio.playARRifleReload();
+      return;
+    }
 
-    this.isReloading = true;
-    this.reloadTimer = 0;
-    this.setADS(false);
-    this.audio.playReload();
+    if (this.currentSlot === 'SNIPER') {
+      if (this.ammo >= this.maxAmmo || this.isReloading || this.isBolting) return;
+      this.isReloading = true;
+      this.reloadTimer = 0;
+      this.setADS(false);
+      this.audio.playReload();
+    }
   }
 
   // Attempt to fire weapon
   canShoot() {
-    if (this.currentSlot === 'SNIPER') {
+    if (this.currentSlot === 'AR') {
+      return !this.isReloading && this.arAmmo > 0 && this.arFireCooldown <= 0;
+    } else if (this.currentSlot === 'SNIPER') {
       return !this.isBolting && !this.isReloading && this.ammo > 0;
     } else {
       return !this.isSwitching;
@@ -180,6 +236,44 @@ export class WeaponSystem {
     if (this.currentSlot === 'KNIFE') {
       this.slashKnife();
       return { fired: true, type: 'KNIFE' };
+    }
+
+    // AR Rapid Shoot Logic (30 Bullets, 5 Damage per shot)
+    if (this.currentSlot === 'AR') {
+      if (this.arAmmo <= 0) {
+        this.audio.playEmptyDryFire();
+        this.reload();
+        return { fired: false, type: 'EMPTY' };
+      }
+
+      if (this.isReloading || this.arFireCooldown > 0) {
+        return { fired: false, type: 'BUSY' };
+      }
+
+      this.arAmmo--;
+      this.arFireCooldown = this.arFireRate;
+      this.audio.playARRifleShot();
+
+      // Recoil
+      this.recoilPitch = this.isAiming ? 0.035 : 0.065;
+      this.recoilOffsetZ = this.isAiming ? 0.022 : 0.04;
+
+      // Eject shell casing
+      if (this.arMesh) {
+        const barrelPos = new THREE.Vector3();
+        this.arMesh.getWorldPosition(barrelPos);
+        const rightDir = new THREE.Vector3(1, 0, 0).applyQuaternion(this.arMesh.quaternion);
+        const upDir = new THREE.Vector3(0, 1, 0).applyQuaternion(this.arMesh.quaternion);
+        this.particles.ejectShell(barrelPos, rightDir, upDir);
+      }
+
+      return {
+        fired: true,
+        type: 'AR',
+        damage: 5,
+        isAiming: this.isAiming,
+        spread: this.getSpread()
+      };
     }
 
     // Sniper Shoot Logic
@@ -220,6 +314,7 @@ export class WeaponSystem {
     return {
       fired: true,
       type: 'SNIPER',
+      damage: 100,
       isAiming: this.isAiming,
       spread: this.getSpread()
     };
@@ -232,8 +327,16 @@ export class WeaponSystem {
     this.inspectDuration = 0.5; // Quick slash swing
   }
 
-  // Accuracy spread: 0 in ADS (laser accurate), wide spread in hipfire
+  // Accuracy spread: Aiming makes spread significantly lower!
   getSpread(isMoving = false) {
+    if (this.currentSlot === 'AR') {
+      if (this.isAiming && this.adsProgress > 0.55) {
+        return 0.006; // Highly accurate grouping when aimed down sights!
+      }
+      return isMoving ? 0.085 : 0.048; // Moderate spread during hipfire
+    }
+
+    // Sniper
     if (this.isAiming && this.adsProgress > 0.85) {
       return 0.0; // Pinpoint accurate quick-scope/hard-scope
     }
@@ -247,6 +350,9 @@ export class WeaponSystem {
     }
     if (this.currentSlot === 'GRENADE') {
       return 1.15; // Tactical light explosive sprint
+    }
+    if (this.currentSlot === 'AR') {
+      return this.isAiming ? 0.68 : 1.0;
     }
     if (this.isAiming) {
       return 0.55; // Slower walking while scoped in
@@ -319,6 +425,11 @@ export class WeaponSystem {
     this.recoilPitch = THREE.MathUtils.damp(this.recoilPitch, 0, this.recoilRecoverySpeed, delta);
     this.recoilOffsetZ = THREE.MathUtils.damp(this.recoilOffsetZ, 0, 12.0, delta);
 
+    // AR Fire rate cooldown
+    if (this.arFireCooldown > 0) {
+      this.arFireCooldown = Math.max(0, this.arFireCooldown - delta);
+    }
+
     // 5. Bolt-Action Sequence Update
     if (this.isBolting) {
       this.boltTimer += delta;
@@ -355,33 +466,86 @@ export class WeaponSystem {
 
     // 6. Reload Sequence
     if (this.isReloading) {
-      this.reloadTimer += delta;
-      const rProg = this.reloadTimer / this.reloadDuration;
-      const mag = this.sniperMesh.userData.magazine;
+      if (this.currentSlot === 'AR') {
+        this.reloadTimer += delta;
+        const rProg = this.reloadTimer / this.arReloadDuration;
+        const mag = this.arMesh.userData.magazine;
 
-      if (mag) {
-        if (rProg < 0.3) {
-          // Drop magazine down
-          mag.position.y = THREE.MathUtils.lerp(-0.12, -0.5, rProg / 0.3);
-        } else if (rProg < 0.7) {
-          // Magazine offscreen
-          mag.position.y = -0.6;
-        } else {
-          // Insert new magazine
-          const insP = (rProg - 0.7) / 0.3;
-          mag.position.y = THREE.MathUtils.lerp(-0.5, -0.12, insP);
+        if (mag) {
+          if (rProg < 0.35) {
+            mag.position.y = THREE.MathUtils.lerp(0, -0.4, rProg / 0.35);
+          } else if (rProg < 0.65) {
+            mag.position.y = -0.4;
+          } else {
+            const insP = (rProg - 0.65) / 0.35;
+            mag.position.y = THREE.MathUtils.lerp(-0.4, 0, insP);
+          }
         }
-      }
 
-      if (this.reloadTimer >= this.reloadDuration) {
-        this.isReloading = false;
-        this.ammo = this.maxAmmo;
-        if (mag) mag.position.y = -0.12;
+        if (this.reloadTimer >= this.arReloadDuration) {
+          this.isReloading = false;
+          this.arAmmo = this.arMaxAmmo;
+          if (mag) mag.position.y = 0;
+        }
+      } else if (this.currentSlot === 'SNIPER') {
+        this.reloadTimer += delta;
+        const rProg = this.reloadTimer / this.reloadDuration;
+        const mag = this.sniperMesh.userData.magazine;
+
+        if (mag) {
+          if (rProg < 0.3) {
+            // Drop magazine down
+            mag.position.y = THREE.MathUtils.lerp(-0.12, -0.5, rProg / 0.3);
+          } else if (rProg < 0.7) {
+            // Magazine offscreen
+            mag.position.y = -0.6;
+          } else {
+            // Insert new magazine
+            const insP = (rProg - 0.7) / 0.3;
+            mag.position.y = THREE.MathUtils.lerp(-0.5, -0.12, insP);
+          }
+        }
+
+        if (this.reloadTimer >= this.reloadDuration) {
+          this.isReloading = false;
+          this.ammo = this.maxAmmo;
+          if (mag) mag.position.y = -0.12;
+        }
       }
     }
 
     // 7. Weapon Inspect & Positioning
-    if (this.currentSlot === 'SNIPER') {
+    if (this.currentSlot === 'AR') {
+      // AR VIEWMODEL
+      const restPos = this.arRestPos;
+      const aimPos = this.arAimPos;
+
+      const targetPos = new THREE.Vector3().lerpVectors(restPos, aimPos, this.adsProgress);
+      targetPos.x += this.swayCurrent.x + bobX;
+      targetPos.y += this.swayCurrent.y + bobY;
+      targetPos.z += this.recoilOffsetZ;
+
+      this.arMesh.position.copy(targetPos);
+
+      const targetRot = new THREE.Euler(
+        THREE.MathUtils.lerp(this.arRestRot.x, this.arAimRot.x, this.adsProgress) - this.recoilPitch * 0.5,
+        THREE.MathUtils.lerp(this.arRestRot.y, this.arAimRot.y, this.adsProgress) + this.swayCurrent.x * 2.0,
+        THREE.MathUtils.lerp(this.arRestRot.z, this.arAimRot.z, this.adsProgress)
+      );
+
+      if (this.isInspecting) {
+        this.inspectTimer += delta;
+        const inspectProgress = this.inspectTimer / this.inspectDuration;
+        const inspectAngle = Math.sin(inspectProgress * Math.PI) * 0.45;
+        targetRot.z += inspectAngle;
+        targetRot.x += inspectAngle * 0.15;
+        if (this.inspectTimer >= this.inspectDuration) {
+          this.isInspecting = false;
+        }
+      }
+
+      this.arMesh.rotation.copy(targetRot);
+    } else if (this.currentSlot === 'SNIPER') {
       const restPos = this.sniperRestPos;
       const aimPos = this.sniperAimPos;
 
@@ -485,6 +649,8 @@ export class WeaponSystem {
   // Reset all weapon states, timers, and reload on death / round restart
   resetStats() {
     this.ammo = this.maxAmmo;
+    this.arAmmo = this.arMaxAmmo;
+    this.arFireCooldown = 0;
     this.grenades = this.maxGrenades;
     this.isAimingThrow = false;
     this.isThrowingGrenade = false;
@@ -505,6 +671,9 @@ export class WeaponSystem {
     this.recoilPitch = 0;
     if (this.sniperMesh && this.sniperMesh.userData.magazine) {
       this.sniperMesh.userData.magazine.position.y = -0.12;
+    }
+    if (this.arMesh && this.arMesh.userData.magazine) {
+      this.arMesh.userData.magazine.position.y = 0;
     }
     if (this.sniperMesh && this.sniperMesh.userData.boltHandle) {
       this.sniperMesh.userData.boltHandle.position.z = 0;

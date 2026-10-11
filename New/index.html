@@ -22,7 +22,7 @@
   <div id="canvas-container"></div>
 
   <!-- Blocker / Start Screen -->
-  <div id="blocker">
+  <div id="blocker" onclick="window.onStartGameClick && window.onStartGameClick()">
     <div class="start-card">
       <div class="title-roblox">SNIPER DUELS</div>
       <div class="subtitle">COMPETITIVE 3D WEB FPS • FIRST TO 6 WINS</div>
@@ -149,6 +149,7 @@
     <div id="top-right-hud">
       <div class="currency-bar">
         <span id="coin-display">350 🪙</span>
+        <button id="loadout-open-btn" class="hud-btn" style="background: linear-gradient(135deg, #00d2ff, #0066aa);">🎒 LOADOUT</button>
         <button id="shop-open-btn" class="hud-btn">CRATES 📦</button>
         <button id="map-open-btn" class="hud-btn" style="background: linear-gradient(135deg, #ffaa00, #ff6600);">MAPS 🗺️</button>
         <button id="auth-menu-btn" class="hud-btn" style="background: linear-gradient(135deg, #00d2ff, #0077cc);">👤 ACCOUNT</button>
@@ -344,6 +345,25 @@
     </div>
   </div>
 
+  <!-- Weapon Loadout / Inventory Equip Modal -->
+  <div id="loadout-modal" style="display: none;">
+    <div class="shop-window" style="max-width: 880px;">
+      <div class="shop-header">
+        <div class="shop-title">🎒 WEAPON LOADOUT & ARSENAL</div>
+        <button id="loadout-close-btn" class="shop-close-x">&times;</button>
+      </div>
+      <div class="shop-body">
+        <div class="loadout-sub-header">
+          <span>SELECT WEAPON LOADOUT • SCALABLE ARSENAL</span>
+          <span class="loadout-active-tag" id="loadout-active-tag">CURRENT: AWP SNIPER</span>
+        </div>
+        <div id="loadout-grid-container" class="loadout-grid">
+          <!-- Dynamically populated weapon cells -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings Modal -->
   <div id="settings-modal">
     <div class="shop-window" style="max-width: 580px;">
@@ -435,5 +455,5 @@
 
   <!-- Main Game Script -->
   <script type="module" src="js/main.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a48a8387df1bf795',t:'MTc5MTY4NjU3MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a49062bcf896b911',t:'MTc5MTc0ODE0MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
