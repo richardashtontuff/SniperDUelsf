@@ -134,6 +134,14 @@
       <button id="mobile-toggle-btn" style="background: rgba(0,210,255,0.25); border: 1px solid #00d2ff; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🕹️ TOUCH</button>
     </div>
 
+    <!-- Side Account Login / Profile Widget -->
+    <div id="auth-sidebar-widget">
+      <button id="auth-widget-btn" class="auth-widget-btn" title="Sign In or Create Account">
+        <span class="auth-badge-icon">👤</span>
+        <span id="auth-widget-text">SIGN IN / REGISTER</span>
+      </button>
+    </div>
+
     <!-- Kill Feed (Top Right) -->
     <div id="kill-feed"></div>
 
@@ -143,6 +151,7 @@
         <span id="coin-display">350 🪙</span>
         <button id="shop-open-btn" class="hud-btn">CRATES 📦</button>
         <button id="map-open-btn" class="hud-btn" style="background: linear-gradient(135deg, #ffaa00, #ff6600);">MAPS 🗺️</button>
+        <button id="auth-menu-btn" class="hud-btn" style="background: linear-gradient(135deg, #00d2ff, #0077cc);">👤 ACCOUNT</button>
         <button id="settings-open-btn" class="hud-btn" style="background: linear-gradient(135deg, #718096, #4a5568);">⚙️</button>
       </div>
     </div>
@@ -381,7 +390,50 @@
     </div>
   </div>
 
+  <!-- Account Authentication Modal (Wasmer MySQL / Lookup Table) -->
+  <div id="auth-modal" style="display: none;">
+    <div class="shop-window auth-window">
+      <div class="shop-header">
+        <div class="shop-title">USER ACCOUNT</div>
+        <button id="auth-close-btn" class="shop-close-x">&times;</button>
+      </div>
+
+      <div class="auth-tabs">
+        <button id="auth-tab-login" class="auth-tab active">SIGN IN</button>
+        <button id="auth-tab-register" class="auth-tab">CREATE ACCOUNT</button>
+      </div>
+
+      <div class="auth-content">
+        <div id="auth-feedback" class="auth-feedback" style="display: none;"></div>
+
+        <div id="auth-form-fields">
+          <div class="auth-input-group">
+            <label class="auth-label" for="auth-username-input">USERNAME</label>
+            <input type="text" id="auth-username-input" class="auth-input" placeholder="Enter username..." maxlength="20" autocomplete="username">
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-label" for="auth-password-input">PASSWORD</label>
+            <input type="password" id="auth-password-input" class="auth-input" placeholder="Enter password..." autocomplete="current-password">
+          </div>
+
+          <button id="auth-submit-btn" class="auth-submit-btn">SIGN IN</button>
+        </div>
+
+        <div id="auth-profile-view" style="display: none;">
+          <div class="auth-profile-card">
+            <div class="auth-avatar-circle">👤</div>
+            <div class="auth-profile-name" id="auth-profile-username">Player</div>
+            <div class="auth-profile-status">STATUS: ONLINE (LOGGED IN)</div>
+            <div class="auth-storage-note">✓ Username & password saved in localStorage</div>
+          </div>
+          <button id="auth-logout-btn" class="auth-logout-btn">LOG OUT</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Main Game Script -->
   <script type="module" src="js/main.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a48a8387df1bf795',t:'MTc5MTY4NjU3MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

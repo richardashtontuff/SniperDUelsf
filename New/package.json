@@ -17,6 +17,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "mysql2": "^3.24.5",
+    "pg": "^8.23.1",
     "ws": "^8.18.0"
   }
 }

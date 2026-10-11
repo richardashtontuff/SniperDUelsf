@@ -409,6 +409,223 @@ class GameEngine {
         if (dot) dot.style.backgroundColor = color;
       });
     }
+
+    // Initialize User Authentication System (Wasmer MySQL / LocalStorage)
+    this.initAuthSystem();
+  }
+
+  // ==========================================
+  // USER AUTHENTICATION SUBSYSTEM
+  // ==========================================
+  initAuthSystem() {
+    this.authMode = 'login';
+    this.currentUser = null;
+
+    const widgetBtn = document.getElementById('auth-widget-btn');
+    const widgetText = document.getElementById('auth-widget-text');
+    const menuBtn = document.getElementById('auth-menu-btn');
+    const modal = document.getElementById('auth-modal');
+    const closeBtn = document.getElementById('auth-close-btn');
+
+    const tabLogin = document.getElementById('auth-tab-login');
+    const tabRegister = document.getElementById('auth-tab-register');
+    const formFields = document.getElementById('auth-form-fields');
+    const profileView = document.getElementById('auth-profile-view');
+    const profileUser = document.getElementById('auth-profile-username');
+    const logoutBtn = document.getElementById('auth-logout-btn');
+
+    const usernameInput = document.getElementById('auth-username-input');
+    const passwordInput = document.getElementById('auth-password-input');
+    const submitBtn = document.getElementById('auth-submit-btn');
+    const feedback = document.getElementById('auth-feedback');
+
+    const showFeedback = (msg, isError = false) => {
+      if (!feedback) return;
+      feedback.style.display = 'block';
+      feedback.className = `auth-feedback ${isError ? 'error' : 'success'}`;
+      feedback.textContent = msg;
+    };
+
+    const clearFeedback = () => {
+      if (feedback) feedback.style.display = 'none';
+    };
+
+    const updateAuthUI = (user = null) => {
+      this.currentUser = user;
+      if (user) {
+        if (widgetText) widgetText.textContent = `👤 ${user.toUpperCase()}`;
+        if (widgetBtn) widgetBtn.classList.add('logged-in');
+        if (menuBtn) menuBtn.textContent = `👤 ${user.toUpperCase()}`;
+        if (formFields) formFields.style.display = 'none';
+        if (profileView) profileView.style.display = 'block';
+        if (profileUser) profileUser.textContent = user;
+        if (tabLogin) tabLogin.style.display = 'none';
+        if (tabRegister) tabRegister.style.display = 'none';
+      } else {
+        if (widgetText) widgetText.textContent = 'SIGN IN / REGISTER';
+        if (widgetBtn) widgetBtn.classList.remove('logged-in');
+        if (menuBtn) menuBtn.textContent = '👤 ACCOUNT';
+        if (formFields) formFields.style.display = 'block';
+        if (profileView) profileView.style.display = 'none';
+        if (tabLogin) tabLogin.style.display = 'block';
+        if (tabRegister) tabRegister.style.display = 'block';
+      }
+    };
+
+    const openModal = (e) => {
+      if (e) {
+        e.stopPropagation();
+        if (e.cancelable && e.type !== 'click') e.preventDefault();
+      }
+      try {
+        if (document.exitPointerLock) document.exitPointerLock();
+      } catch (err) {}
+      if (modal) {
+        modal.style.display = 'flex';
+      }
+      clearFeedback();
+    };
+
+    if (widgetBtn) {
+      widgetBtn.addEventListener('click', openModal);
+      widgetBtn.addEventListener('touchend', openModal, { passive: false });
+    }
+
+    if (menuBtn) {
+      menuBtn.addEventListener('click', openModal);
+      menuBtn.addEventListener('touchend', openModal, { passive: false });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (modal) modal.style.display = 'none';
+      });
+      closeBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (modal) modal.style.display = 'none';
+      });
+    }
+
+    const setTab = (mode) => {
+      this.authMode = mode;
+      clearFeedback();
+      if (mode === 'login') {
+        tabLogin.classList.add('active');
+        tabRegister.classList.remove('active');
+        submitBtn.textContent = 'SIGN IN';
+      } else {
+        tabRegister.classList.add('active');
+        tabLogin.classList.remove('active');
+        submitBtn.textContent = 'CREATE ACCOUNT';
+      }
+    };
+
+    if (tabLogin) tabLogin.addEventListener('click', () => setTab('login'));
+    if (tabRegister) tabRegister.addEventListener('click', () => setTab('register'));
+
+    const doSubmit = async () => {
+      const u = usernameInput ? usernameInput.value.trim() : '';
+      const p = passwordInput ? passwordInput.value : '';
+
+      if (!u || !p) {
+        showFeedback('Please enter both username and password.', true);
+        return;
+      }
+      if (u.length < 3 || u.length > 20) {
+        showFeedback('Username must be 3-20 characters.', true);
+        return;
+      }
+      if (p.length < 3) {
+        showFeedback('Password must be at least 3 characters.', true);
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'PROCESSING...';
+
+      try {
+        const endpoint = this.authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          // Save credentials in localStorage as requested
+          localStorage.setItem('sniper_duels_auth', JSON.stringify({
+            username: data.username,
+            password: p,
+            savedAt: Date.now()
+          }));
+
+          showFeedback(`✓ ${data.message}`, false);
+          updateAuthUI(data.username);
+
+          setTimeout(() => {
+            if (modal) modal.style.display = 'none';
+          }, 1200);
+        } else {
+          showFeedback(data.message || 'Authentication failed.', true);
+        }
+      } catch (err) {
+        showFeedback('Failed to reach server. Check connection.', true);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = this.authMode === 'register' ? 'CREATE ACCOUNT' : 'SIGN IN';
+      }
+    };
+
+    if (submitBtn) {
+      submitBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        doSubmit();
+      });
+      submitBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        doSubmit();
+      });
+    }
+
+    if (passwordInput) {
+      passwordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doSubmit();
+      });
+    }
+
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        localStorage.removeItem('sniper_duels_auth');
+        updateAuthUI(null);
+        showFeedback('Logged out successfully.', false);
+      });
+    }
+
+    // Auto-login / restore credentials from localStorage
+    try {
+      const savedAuth = localStorage.getItem('sniper_duels_auth');
+      if (savedAuth) {
+        const parsed = JSON.parse(savedAuth);
+        if (parsed.username && parsed.password) {
+          fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: parsed.username, password: parsed.password })
+          }).then(r => r.json()).then(data => {
+            if (data.success) {
+              updateAuthUI(data.username);
+            }
+          }).catch(() => {
+            updateAuthUI(parsed.username);
+          });
+        }
+      }
+    } catch (e) {}
   }
 
   openMapModal() {

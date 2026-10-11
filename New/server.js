@@ -2,6 +2,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 let WebSocketServer = null;
 try {
   WebSocketServer = require('./vendor/ws').WebSocketServer;
@@ -11,6 +12,260 @@ try {
   } catch (e2) {
     console.warn('[Server] WebSocketServer not available:', e2.message);
   }
+}
+
+// ==========================================
+// USER DATABASE (POSTGRESQL / MYSQL / LOCAL LOOKUP)
+// ==========================================
+const DB_FILE = path.join(__dirname, 'data', 'users.json');
+let userLookupTable = {};
+
+// Load existing lookup table from disk
+try {
+  if (fs.existsSync(DB_FILE)) {
+    userLookupTable = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  } else {
+    fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+    fs.writeFileSync(DB_FILE, JSON.stringify(userLookupTable, null, 2));
+  }
+} catch (e) {
+  console.warn('[DB] Notice initializing user lookup file:', e.message);
+}
+
+function saveUserLookupTable() {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(userLookupTable, null, 2));
+  } catch (e) {
+    console.warn('[DB] Notice saving user lookup table:', e.message);
+  }
+}
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(`sniper_duels_salt_${password}`).digest('hex');
+}
+
+// Database auto-detection: PostgreSQL, MySQL, or local lookup fallback
+let pgPool = null;
+let mysqlPool = null;
+
+// Read Wasmer auto-generated variables (db_host, db_username, db_password, db_port, db_name)
+const dbHost = process.env.DB_HOST || process.env.db_host || process.env.PGHOST || process.env.POSTGRES_HOST;
+const dbUser = process.env.DB_USERNAME || process.env.db_username || process.env.DB_USER || process.env.db_user || process.env.PGUSER || process.env.POSTGRES_USER;
+const dbPassword = process.env.DB_PASSWORD || process.env.db_password || process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD;
+const dbName = process.env.DB_NAME || process.env.db_name || process.env.DB_DATABASE || process.env.db_database || process.env.PGDATABASE || process.env.POSTGRES_DB;
+const dbPort = parseInt(process.env.DB_PORT || process.env.db_port || process.env.PGPORT || '5432', 10);
+
+const dbUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.MYSQL_URL;
+const isPostgres = (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) ||
+                   Boolean(dbHost) || Boolean(process.env.PGHOST);
+const isMysql = (dbUrl && dbUrl.startsWith('mysql://')) || Boolean(process.env.MYSQL_HOST);
+
+if (isPostgres) {
+  try {
+    const { Pool } = require('pg');
+    let poolConfig;
+
+    if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
+      poolConfig = {
+        connectionString: dbUrl,
+        ssl: (process.env.PGSSL === 'true' || dbUrl.includes('sslmode=require') || dbUrl.includes('ssl=true')) ? { rejectUnauthorized: false } : undefined
+      };
+    } else {
+      poolConfig = {
+        host: dbHost || 'localhost',
+        user: dbUser || 'postgres',
+        password: dbPassword || '',
+        database: dbName || 'sniper_duels',
+        port: dbPort || 5432,
+        ssl: process.env.PGSSL === 'false' ? false : (process.env.NODE_ENV === 'production' && dbHost !== 'localhost' ? { rejectUnauthorized: false } : undefined)
+      };
+    }
+
+    pgPool = new Pool(poolConfig);
+    console.log(`[DB] Connecting to PostgreSQL database at ${dbHost || dbUrl || 'localhost'} on Wasmer...`);
+
+    // Auto-create users table in PostgreSQL
+    pgPool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `).then(() => {
+      console.log('[DB] ✓ PostgreSQL "users" table verified and active on Wasmer!');
+    }).catch(err => {
+      console.warn('[DB] PostgreSQL schema notice (using local lookup fallback):', err.message);
+    });
+  } catch (err) {
+    console.log('[DB] Notice initializing PostgreSQL (using local lookup fallback):', err.message);
+  }
+} else if (isMysql) {
+  try {
+    const mysql = require('mysql2');
+    const poolOptions = dbUrl || {
+      host: process.env.MYSQL_HOST || 'localhost',
+      user: process.env.MYSQL_USER || 'root',
+      password: process.env.MYSQL_PASSWORD || '',
+      database: process.env.MYSQL_DATABASE || 'sniper_duels',
+      port: process.env.MYSQL_PORT ? parseInt(process.env.MYSQL_PORT, 10) : 3306,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    };
+
+    mysqlPool = mysql.createPool(poolOptions);
+    console.log('[DB] Connecting to MySQL database...');
+
+    mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `, (err) => {
+      if (err) {
+        console.warn('[DB] MySQL notice (using local lookup table fallback):', err.message);
+      } else {
+        console.log('[DB] ✓ MySQL "users" lookup table verified and active!');
+      }
+    });
+  } catch (err) {
+    console.log('[DB] Notice initializing MySQL (using local lookup table fallback):', err.message);
+  }
+}
+
+async function registerUser(username, password) {
+  const cleanUsername = username.trim();
+  const lower = cleanUsername.toLowerCase();
+  const passwordHash = hashPassword(password);
+
+  if (userLookupTable[lower]) {
+    return { success: false, message: 'Username already taken. Please choose another.' };
+  }
+
+  // PostgreSQL insertion
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        'INSERT INTO users (username, password_hash) VALUES ($1, $2)',
+        [cleanUsername, passwordHash]
+      );
+    } catch (dbErr) {
+      if (dbErr.code === '23505') {
+        return { success: false, message: 'Username already taken.' };
+      }
+      console.warn('[DB] PostgreSQL notice:', dbErr.message);
+    }
+  }
+
+  // MySQL insertion
+  if (mysqlPool) {
+    try {
+      await new Promise((resolve, reject) => {
+        mysqlPool.query(
+          'INSERT INTO users (username, password_hash) VALUES (?, ?)',
+          [cleanUsername, passwordHash],
+          (err, result) => {
+            if (err) return reject(err);
+            resolve(result);
+          }
+        );
+      });
+    } catch (dbErr) {
+      if (dbErr.code === 'ER_DUP_ENTRY') {
+        return { success: false, message: 'Username already exists.' };
+      }
+      console.warn('[DB] MySQL notice:', dbErr.message);
+    }
+  }
+
+  userLookupTable[lower] = {
+    username: cleanUsername,
+    passwordHash: passwordHash,
+    createdAt: new Date().toISOString()
+  };
+  saveUserLookupTable();
+
+  return { success: true, username: cleanUsername, message: 'Account created successfully!' };
+}
+
+async function authenticateUser(username, password) {
+  const cleanUsername = username.trim();
+  const lower = cleanUsername.toLowerCase();
+  const passwordHash = hashPassword(password);
+
+  // PostgreSQL authentication
+  if (pgPool) {
+    try {
+      const res = await pgPool.query(
+        'SELECT username, password_hash FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1',
+        [cleanUsername]
+      );
+      if (res.rows && res.rows.length > 0) {
+        const row = res.rows[0];
+        if (row.password_hash === passwordHash) {
+          return { success: true, username: row.username, message: 'Login successful!' };
+        } else {
+          return { success: false, message: 'Incorrect password.' };
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[DB] PostgreSQL notice:', dbErr.message);
+    }
+  }
+
+  // MySQL authentication
+  if (mysqlPool) {
+    try {
+      const row = await new Promise((resolve, reject) => {
+        mysqlPool.query(
+          'SELECT username, password_hash FROM users WHERE LOWER(username) = ? LIMIT 1',
+          [lower],
+          (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows && rows[0]);
+          }
+        );
+      });
+      if (row) {
+        if (row.password_hash === passwordHash) {
+          return { success: true, username: row.username, message: 'Login successful!' };
+        } else {
+          return { success: false, message: 'Incorrect password.' };
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[DB] MySQL notice:', dbErr.message);
+    }
+  }
+
+  const record = userLookupTable[lower];
+  if (!record) {
+    return { success: false, message: 'Account not found. Please create one.' };
+  }
+  if (record.passwordHash !== passwordHash) {
+    return { success: false, message: 'Incorrect password.' };
+  }
+
+  return { success: true, username: record.username, message: 'Login successful!' };
+}
+
+function readJsonBody(req, callback) {
+  let body = '';
+  req.on('data', chunk => {
+    body += chunk;
+    if (body.length > 5e5) req.destroy();
+  });
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body || '{}');
+      callback(null, data);
+    } catch (err) {
+      callback(err);
+    }
+  });
 }
 
 const MIME_TYPES = {
@@ -33,10 +288,66 @@ const MIME_TYPES = {
 function requestHandler(req, res) {
   let reqPath = req.url.split('?')[0];
 
+  // CORS Preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+    return res.end();
+  }
+
   // Cloud Healthchecks
   if (reqPath === '/health' || reqPath === '/healthz' || reqPath === '/ping') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     return res.end('OK');
+  }
+
+  // REST API: User Registration
+  if (reqPath === '/api/auth/register' && req.method === 'POST') {
+    return readJsonBody(req, async (err, data) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      if (err || !data.username || !data.password) {
+        res.writeHead(400);
+        return res.end(JSON.stringify({ success: false, message: 'Username and password required.' }));
+      }
+      const username = String(data.username).trim();
+      const password = String(data.password);
+      if (username.length < 3 || username.length > 20) {
+        res.writeHead(400);
+        return res.end(JSON.stringify({ success: false, message: 'Username must be between 3 and 20 characters.' }));
+      }
+      if (password.length < 3) {
+        res.writeHead(400);
+        return res.end(JSON.stringify({ success: false, message: 'Password must be at least 3 characters.' }));
+      }
+
+      const result = await registerUser(username, password);
+      res.writeHead(result.success ? 200 : 400);
+      return res.end(JSON.stringify(result));
+    });
+  }
+
+  // REST API: User Login
+  if (reqPath === '/api/auth/login' && req.method === 'POST') {
+    return readJsonBody(req, async (err, data) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      if (err || !data.username || !data.password) {
+        res.writeHead(400);
+        return res.end(JSON.stringify({ success: false, message: 'Username and password required.' }));
+      }
+      const username = String(data.username).trim();
+      const password = String(data.password);
+
+      const result = await authenticateUser(username, password);
+      res.writeHead(result.success ? 200 : 401);
+      return res.end(JSON.stringify(result));
+    });
   }
 
   if (reqPath === '/') reqPath = '/index.html';

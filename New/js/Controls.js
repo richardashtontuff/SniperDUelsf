@@ -183,9 +183,9 @@ export class FPSControls {
 
       // Ignore if clicking inside interactive menus, modals, cards or HUD buttons
       if (e.target && e.target.closest && e.target.closest(
-        '#shop-modal, #map-modal, #settings-modal, #blocker, .shop-window, ' +
+        '#shop-modal, #map-modal, #settings-modal, #auth-modal, #auth-sidebar-widget, #blocker, .shop-window, ' +
         '#map-vote-overlay, .vote-modal, .vote-card, ' +
-        '#roulette-overlay, #reward-modal, .currency-bar, .hud-btn, ' +
+        '#roulette-overlay, #reward-modal, .currency-bar, .hud-btn, .auth-widget-btn, .auth-tab, .auth-input, ' +
         '#joystick-zone, #mobile-action-buttons, .mob-btn, ' +
         'button, input, select, a, .case-card, .inventory-item, .map-card'
       )) {
