@@ -52,23 +52,41 @@ function hashPassword(password) {
   return crypto.createHash('sha256').update(`sniper_duels_salt_${password}`).digest('hex');
 }
 
-// Database auto-detection: PostgreSQL, MySQL, or local lookup fallback
+// Database auto-detection & dual-engine connector (MySQL / PostgreSQL / Local Lookup Table)
 let pgPool = null;
 let mysqlPool = null;
 
-// Read Wasmer auto-generated variables (db_host, db_username, db_password, db_port, db_name)
-const dbHost = process.env.DB_HOST || process.env.db_host || process.env.PGHOST || process.env.POSTGRES_HOST;
-const dbUser = process.env.DB_USERNAME || process.env.db_username || process.env.DB_USER || process.env.db_user || process.env.PGUSER || process.env.POSTGRES_USER;
-const dbPassword = process.env.DB_PASSWORD || process.env.db_password || process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD;
-const dbName = process.env.DB_NAME || process.env.db_name || process.env.DB_DATABASE || process.env.db_database || process.env.PGDATABASE || process.env.POSTGRES_DB;
-const dbPort = parseInt(process.env.DB_PORT || process.env.db_port || process.env.PGPORT || '5432', 10);
-
+// Read Wasmer auto-generated environment variables
+const dbHost = process.env.DB_HOST || process.env.db_host || process.env.PGHOST || process.env.POSTGRES_HOST || process.env.MYSQL_HOST;
+const dbUser = process.env.DB_USERNAME || process.env.db_username || process.env.DB_USER || process.env.db_user || process.env.PGUSER || process.env.POSTGRES_USER || process.env.MYSQL_USER;
+const dbPassword = process.env.DB_PASSWORD || process.env.db_password || process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD || process.env.MYSQL_PASSWORD;
+const dbName = process.env.DB_NAME || process.env.db_name || process.env.DB_DATABASE || process.env.db_database || process.env.PGDATABASE || process.env.POSTGRES_DB || process.env.MYSQL_DATABASE;
+const rawPort = process.env.DB_PORT || process.env.db_port || process.env.PGPORT || process.env.MYSQL_PORT;
+const parsedPort = rawPort ? parseInt(rawPort, 10) : null;
 const dbUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL || process.env.MYSQL_URL;
-const isPostgres = (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) ||
-                   Boolean(dbHost) || Boolean(process.env.PGHOST);
-const isMysql = (dbUrl && dbUrl.startsWith('mysql://')) || Boolean(process.env.MYSQL_HOST);
+const engineEnv = (process.env.DB_ENGINE || process.env.db_engine || '').toLowerCase();
 
-if (isPostgres) {
+// Determine engine preference based on explicit port (3306 for MySQL, 5432 for Postgres) or config
+let preferMysql = false;
+let preferPostgres = false;
+
+if (dbUrl) {
+  if (dbUrl.startsWith('mysql://')) preferMysql = true;
+  else if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) preferPostgres = true;
+}
+
+if (!preferMysql && !preferPostgres) {
+  if (parsedPort === 3306 || engineEnv.includes('mysql') || process.env.MYSQL_HOST) {
+    preferMysql = true;
+  } else if (parsedPort === 5432 || engineEnv.includes('postgres') || process.env.PGHOST) {
+    preferPostgres = true;
+  } else {
+    // Wasmer native database defaults to MySQL on port 3306
+    preferMysql = true;
+  }
+}
+
+async function initPostgres(useSsl = true) {
   try {
     const { Pool } = require('pg');
     let poolConfig;
@@ -77,7 +95,7 @@ if (isPostgres) {
       poolConfig = {
         connectionString: dbUrl,
         connectionTimeoutMillis: 5000,
-        ssl: { rejectUnauthorized: false }
+        ssl: useSsl ? { rejectUnauthorized: false } : false
       };
     } else {
       poolConfig = {
@@ -85,74 +103,108 @@ if (isPostgres) {
         user: dbUser,
         password: dbPassword,
         database: dbName || 'sniper_duels',
-        port: Number(dbPort) || 5432,
+        port: parsedPort || 5432,
         connectionTimeoutMillis: 5000,
-        ssl: { rejectUnauthorized: false }
+        ssl: useSsl ? { rejectUnauthorized: false } : false
       };
     }
 
-    pgPool = new Pool(poolConfig);
-    pgPool.on('error', (err) => {
-      console.warn('[DB] PostgreSQL pool client notice (non-fatal):', err.message);
+    const testPool = new Pool(poolConfig);
+    testPool.on('error', (err) => {
+      console.warn('[DB] PostgreSQL pool client notice:', err.message);
     });
 
-    console.log(`[DB] Connecting to PostgreSQL database at ${dbHost || dbUrl || 'localhost'} on Wasmer...`);
+    console.log(`[DB] Connecting to PostgreSQL at ${dbHost || 'localhost'}:${parsedPort || 5432} (ssl: ${useSsl})...`);
 
-    // Auto-create users table in PostgreSQL
-    pgPool.query(`
+    await testPool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        coins INT DEFAULT 350,
+        inventory TEXT,
+        equipped_sniper VARCHAR(50) DEFAULT 'sniper_classic',
+        equipped_knife VARCHAR(50) DEFAULT 'knife_vanilla',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
-    `).then(() => {
-      console.log('[DB] ✓ PostgreSQL "users" table verified and active on Wasmer!');
-    }).catch(err => {
-      console.warn('[DB] PostgreSQL schema notice (using local lookup fallback):', err.message);
-    });
+    `);
+
+    pgPool = testPool;
+    console.log('[DB] ✓ PostgreSQL "users" table verified and active on Wasmer!');
+    return true;
   } catch (err) {
-    console.log('[DB] Notice initializing PostgreSQL (using local lookup fallback):', err.message);
+    const msg = (err && err.message) || '';
+    if (useSsl && (msg.includes('SSL') || msg.includes('ssl') || msg.includes('does not support SSL'))) {
+      console.log('[DB] Retrying PostgreSQL connection without SSL...');
+      return initPostgres(false);
+    }
+    console.warn('[DB] PostgreSQL initialization notice:', msg);
+    return false;
   }
-} else if (isMysql) {
+}
+
+async function initMysql() {
   try {
     const mysql = require('mysql2');
-    const poolOptions = dbUrl || {
-      host: process.env.MYSQL_HOST || 'localhost',
-      user: process.env.MYSQL_USER || 'root',
-      password: process.env.MYSQL_PASSWORD || '',
-      database: process.env.MYSQL_DATABASE || 'sniper_duels',
-      port: process.env.MYSQL_PORT ? parseInt(process.env.MYSQL_PORT, 10) : 3306,
+    const poolOptions = dbUrl ? dbUrl : {
+      host: dbHost || 'localhost',
+      user: dbUser || 'root',
+      password: dbPassword || '',
+      database: dbName || 'sniper_duels',
+      port: parsedPort || 3306,
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
       connectTimeout: 5000
     };
 
-    mysqlPool = mysql.createPool(poolOptions);
-    mysqlPool.on('error', (err) => {
-      console.warn('[DB] MySQL pool notice (non-fatal):', err.message);
+    console.log(`[DB] Connecting to MySQL at ${dbHost || 'localhost'}:${parsedPort || 3306}...`);
+    const testPool = mysql.createPool(poolOptions);
+    testPool.on('error', (err) => {
+      console.warn('[DB] MySQL pool notice:', err.message);
     });
-    console.log('[DB] Connecting to MySQL database...');
 
-    mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `, (err) => {
-      if (err) {
-        console.warn('[DB] MySQL notice (using local lookup table fallback):', err.message);
-      } else {
-        console.log('[DB] ✓ MySQL "users" lookup table verified and active!');
-      }
+    await new Promise((resolve, reject) => {
+      testPool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          username VARCHAR(50) UNIQUE NOT NULL,
+          password_hash VARCHAR(255) NOT NULL,
+          coins INT DEFAULT 350,
+          inventory TEXT,
+          equipped_sniper VARCHAR(50) DEFAULT 'sniper_classic',
+          equipped_knife VARCHAR(50) DEFAULT 'knife_vanilla',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `, (err, res) => {
+        if (err) return reject(err);
+        resolve(res);
+      });
     });
+
+    mysqlPool = testPool;
+    console.log('[DB] ✓ MySQL "users" table verified and active on Wasmer!');
+    return true;
   } catch (err) {
-    console.log('[DB] Notice initializing MySQL (using local lookup table fallback):', err.message);
+    console.warn('[DB] MySQL notice (using local lookup fallback):', err.message);
+    return false;
   }
 }
+
+// Perform intelligent database initialization
+(async () => {
+  if (dbHost || dbUrl) {
+    if (preferPostgres) {
+      const ok = await initPostgres(true);
+      if (!ok) await initMysql();
+    } else {
+      const ok = await initMysql();
+      if (!ok) await initPostgres(true);
+    }
+  } else {
+    console.log('[DB] No external DB credentials found; using local lookup table fallback.');
+  }
+})();
 
 async function registerUser(username, password) {
   const cleanUsername = username.trim();
