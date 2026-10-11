@@ -171,9 +171,49 @@ export class CaseSystem {
     this.initUI();
   }
 
+  saveProfile() {
+    const data = {
+      coins: this.coins,
+      inventory: this.inventory,
+      equippedSniper: this.equippedSniper,
+      equippedKnife: this.equippedKnife
+    };
+    try {
+      localStorage.setItem('sniper_duels_profile', JSON.stringify(data));
+      if (window.__currentUser) {
+        localStorage.setItem(`sniper_duels_profile_${window.__currentUser}`, JSON.stringify(data));
+        fetch('/api/user/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: window.__currentUser, ...data })
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  }
+
+  loadProfile(profileData) {
+    if (!profileData) return;
+    if (typeof profileData.coins === 'number') this.coins = profileData.coins;
+    if (Array.isArray(profileData.inventory) && profileData.inventory.length > 0) {
+      this.inventory = profileData.inventory;
+    }
+    if (profileData.equippedSniper && this.skins[profileData.equippedSniper]) {
+      this.equippedSniper = profileData.equippedSniper;
+      this.weaponSystem.applySniperSkin(this.skins[this.equippedSniper]);
+    }
+    if (profileData.equippedKnife && this.skins[profileData.equippedKnife]) {
+      this.equippedKnife = profileData.equippedKnife;
+      this.weaponSystem.applyKnifeSkin(this.skins[this.equippedKnife]);
+    }
+    this.updateHUDCoins();
+    this.renderShopCases();
+    this.renderInventory();
+  }
+
   addCoins(amount) {
     this.coins += amount;
     this.updateHUDCoins();
+    this.saveProfile();
   }
 
   updateHUDCoins() {
@@ -184,6 +224,13 @@ export class CaseSystem {
   }
 
   initUI() {
+    // Restore from localStorage on startup
+    try {
+      const saved = localStorage.getItem('sniper_duels_profile');
+      if (saved) {
+        this.loadProfile(JSON.parse(saved));
+      }
+    } catch (e) {}
     this.updateHUDCoins();
   }
 
@@ -278,6 +325,7 @@ export class CaseSystem {
       this.equippedKnife = skinId;
       this.weaponSystem.applyKnifeSkin(skin);
     }
+    this.saveProfile();
   }
 
   // Horizontal CS:GO / Roblox unboxing carousel animation
@@ -341,6 +389,7 @@ export class CaseSystem {
     setTimeout(() => {
       this.isUnboxing = false;
       this.inventory.push(winningSkinId);
+      this.saveProfile();
 
       this.audio.playUnlockFanfare(winningSkin.rarity);
 

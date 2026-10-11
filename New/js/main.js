@@ -450,8 +450,10 @@ class GameEngine {
       if (feedback) feedback.style.display = 'none';
     };
 
-    const updateAuthUI = (user = null) => {
+    const updateAuthUI = (user = null, profile = null) => {
       this.currentUser = user;
+      window.__currentUser = user;
+
       if (user) {
         if (widgetText) widgetText.textContent = `👤 ${user.toUpperCase()}`;
         if (widgetBtn) widgetBtn.classList.add('logged-in');
@@ -461,6 +463,10 @@ class GameEngine {
         if (profileUser) profileUser.textContent = user;
         if (tabLogin) tabLogin.style.display = 'none';
         if (tabRegister) tabRegister.style.display = 'none';
+
+        if (profile && this.caseSystem) {
+          this.caseSystem.loadProfile(profile);
+        }
       } else {
         if (widgetText) widgetText.textContent = 'SIGN IN / REGISTER';
         if (widgetBtn) widgetBtn.classList.remove('logged-in');
@@ -563,7 +569,7 @@ class GameEngine {
           }));
 
           showFeedback(`✓ ${data.message}`, false);
-          updateAuthUI(data.username);
+          updateAuthUI(data.username, data);
 
           setTimeout(() => {
             if (modal) modal.style.display = 'none';
@@ -618,7 +624,7 @@ class GameEngine {
             body: JSON.stringify({ username: parsed.username, password: parsed.password })
           }).then(r => r.json()).then(data => {
             if (data.success) {
-              updateAuthUI(data.username);
+              updateAuthUI(data.username, data);
             }
           }).catch(() => {
             updateAuthUI(parsed.username);

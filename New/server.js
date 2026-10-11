@@ -158,6 +158,7 @@ async function registerUser(username, password) {
   const cleanUsername = username.trim();
   const lower = cleanUsername.toLowerCase();
   const passwordHash = hashPassword(password);
+  const defaultInventory = JSON.stringify(['sniper_classic', 'knife_vanilla']);
 
   if (userLookupTable[lower]) {
     return { success: false, message: 'Username already taken. Please choose another.' };
@@ -167,8 +168,8 @@ async function registerUser(username, password) {
   if (pgPool) {
     try {
       await pgPool.query(
-        'INSERT INTO users (username, password_hash) VALUES ($1, $2)',
-        [cleanUsername, passwordHash]
+        'INSERT INTO users (username, password_hash, coins, inventory, equipped_sniper, equipped_knife) VALUES ($1, $2, $3, $4, $5, $6)',
+        [cleanUsername, passwordHash, 350, defaultInventory, 'sniper_classic', 'knife_vanilla']
       );
     } catch (dbErr) {
       if (dbErr.code === '23505') {
@@ -183,8 +184,8 @@ async function registerUser(username, password) {
     try {
       await new Promise((resolve, reject) => {
         mysqlPool.query(
-          'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-          [cleanUsername, passwordHash],
+          'INSERT INTO users (username, password_hash, coins, inventory, equipped_sniper, equipped_knife) VALUES (?, ?, ?, ?, ?, ?)',
+          [cleanUsername, passwordHash, 350, defaultInventory, 'sniper_classic', 'knife_vanilla'],
           (err, result) => {
             if (err) return reject(err);
             resolve(result);
@@ -202,11 +203,23 @@ async function registerUser(username, password) {
   userLookupTable[lower] = {
     username: cleanUsername,
     passwordHash: passwordHash,
+    coins: 350,
+    inventory: ['sniper_classic', 'knife_vanilla'],
+    equippedSniper: 'sniper_classic',
+    equippedKnife: 'knife_vanilla',
     createdAt: new Date().toISOString()
   };
   saveUserLookupTable();
 
-  return { success: true, username: cleanUsername, message: 'Account created successfully!' };
+  return {
+    success: true,
+    username: cleanUsername,
+    coins: 350,
+    inventory: ['sniper_classic', 'knife_vanilla'],
+    equippedSniper: 'sniper_classic',
+    equippedKnife: 'knife_vanilla',
+    message: 'Account created successfully!'
+  };
 }
 
 async function authenticateUser(username, password) {
@@ -218,13 +231,23 @@ async function authenticateUser(username, password) {
   if (pgPool) {
     try {
       const res = await pgPool.query(
-        'SELECT username, password_hash FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1',
+        'SELECT username, password_hash, coins, inventory, equipped_sniper, equipped_knife FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1',
         [cleanUsername]
       );
       if (res.rows && res.rows.length > 0) {
         const row = res.rows[0];
         if (row.password_hash === passwordHash) {
-          return { success: true, username: row.username, message: 'Login successful!' };
+          let inv = ['sniper_classic', 'knife_vanilla'];
+          try { inv = typeof row.inventory === 'string' ? JSON.parse(row.inventory) : (row.inventory || inv); } catch (e) {}
+          return {
+            success: true,
+            username: row.username,
+            coins: row.coins !== undefined ? row.coins : 350,
+            inventory: inv,
+            equippedSniper: row.equipped_sniper || 'sniper_classic',
+            equippedKnife: row.equipped_knife || 'knife_vanilla',
+            message: 'Login successful!'
+          };
         } else {
           return { success: false, message: 'Incorrect password.' };
         }
@@ -239,7 +262,7 @@ async function authenticateUser(username, password) {
     try {
       const row = await new Promise((resolve, reject) => {
         mysqlPool.query(
-          'SELECT username, password_hash FROM users WHERE LOWER(username) = ? LIMIT 1',
+          'SELECT username, password_hash, coins, inventory, equipped_sniper, equipped_knife FROM users WHERE LOWER(username) = ? LIMIT 1',
           [lower],
           (err, rows) => {
             if (err) return reject(err);
@@ -249,7 +272,17 @@ async function authenticateUser(username, password) {
       });
       if (row) {
         if (row.password_hash === passwordHash) {
-          return { success: true, username: row.username, message: 'Login successful!' };
+          let inv = ['sniper_classic', 'knife_vanilla'];
+          try { inv = typeof row.inventory === 'string' ? JSON.parse(row.inventory) : (row.inventory || inv); } catch (e) {}
+          return {
+            success: true,
+            username: row.username,
+            coins: row.coins !== undefined ? row.coins : 350,
+            inventory: inv,
+            equippedSniper: row.equipped_sniper || 'sniper_classic',
+            equippedKnife: row.equipped_knife || 'knife_vanilla',
+            message: 'Login successful!'
+          };
         } else {
           return { success: false, message: 'Incorrect password.' };
         }
@@ -267,7 +300,56 @@ async function authenticateUser(username, password) {
     return { success: false, message: 'Incorrect password.' };
   }
 
-  return { success: true, username: record.username, message: 'Login successful!' };
+  return {
+    success: true,
+    username: record.username,
+    coins: record.coins !== undefined ? record.coins : 350,
+    inventory: record.inventory || ['sniper_classic', 'knife_vanilla'],
+    equippedSniper: record.equippedSniper || 'sniper_classic',
+    equippedKnife: record.equippedKnife || 'knife_vanilla',
+    message: 'Login successful!'
+  };
+}
+
+async function saveUserData(username, profile) {
+  const cleanUsername = username.trim();
+  const lower = cleanUsername.toLowerCase();
+  const invJson = JSON.stringify(profile.inventory || ['sniper_classic', 'knife_vanilla']);
+
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        'UPDATE users SET coins = $1, inventory = $2, equipped_sniper = $3, equipped_knife = $4 WHERE LOWER(username) = LOWER($5)',
+        [profile.coins, invJson, profile.equippedSniper, profile.equippedKnife, cleanUsername]
+      );
+    } catch (e) {
+      console.warn('[DB] PG save error:', e.message);
+    }
+  }
+
+  if (mysqlPool) {
+    try {
+      await new Promise((resolve) => {
+        mysqlPool.query(
+          'UPDATE users SET coins = ?, inventory = ?, equipped_sniper = ?, equipped_knife = ? WHERE LOWER(username) = ?',
+          [profile.coins, invJson, profile.equippedSniper, profile.equippedKnife, lower],
+          () => resolve()
+        );
+      });
+    } catch (e) {
+      console.warn('[DB] MySQL save error:', e.message);
+    }
+  }
+
+  if (userLookupTable[lower]) {
+    userLookupTable[lower].coins = profile.coins;
+    userLookupTable[lower].inventory = profile.inventory;
+    userLookupTable[lower].equippedSniper = profile.equippedSniper;
+    userLookupTable[lower].equippedKnife = profile.equippedKnife;
+    saveUserLookupTable();
+  }
+
+  return { success: true };
 }
 
 function readJsonBody(req, callback) {
@@ -365,6 +447,22 @@ function requestHandler(req, res) {
       const result = await authenticateUser(username, password);
       res.writeHead(result.success ? 200 : 401);
       return res.end(JSON.stringify(result));
+    });
+  }
+
+  // REST API: User Save (Skins, Coins & Inventory)
+  if (reqPath === '/api/user/save' && req.method === 'POST') {
+    return readJsonBody(req, async (err, data) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      if (err || !data.username) {
+        res.writeHead(400);
+        return res.end(JSON.stringify({ success: false, message: 'Username required.' }));
+      }
+      await saveUserData(data.username, data);
+      res.writeHead(200);
+      return res.end(JSON.stringify({ success: true }));
     });
   }
 
