@@ -402,6 +402,11 @@ const server = http.createServer(requestHandler);
 // 3. Real-Time 60Hz Authoritative WebSocket Game Server
 const wss = new WebSocketServer({ server });
 
+// Start listening immediately so cloud health checks pass with 0 latency
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`SNIPER DUELS Server live on http://0.0.0.0:${PORT}`);
+});
+
 let clients = new Map();
 let nextPlayerId = 1;
 let queuePlayers = new Set(); // Set of player IDs standing on the Middle 1v1 Queue Mat
@@ -946,7 +951,3 @@ function broadcastExcept(excludeId, msg) {
     }
   }
 }
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`SNIPER DUELS Server live on http://0.0.0.0:${PORT}`);
-});
