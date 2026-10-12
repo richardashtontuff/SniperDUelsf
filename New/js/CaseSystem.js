@@ -211,9 +211,16 @@ export class CaseSystem {
   }
 
   addCoins(amount) {
-    this.coins += amount;
+    this.coins = Math.max(0, this.coins + amount);
     this.updateHUDCoins();
     this.saveProfile();
+  }
+
+  deductCoins(amount = 100) {
+    this.coins = Math.max(0, this.coins - amount);
+    this.updateHUDCoins();
+    this.saveProfile();
+    return this.coins;
   }
 
   updateHUDCoins() {

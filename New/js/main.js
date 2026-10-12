@@ -249,6 +249,40 @@ export class GameEngine {
       this.cameraManager.onResize(window.innerWidth, window.innerHeight);
     });
 
+    // Tab Focus & Visibility Monitoring:
+    // If player is not focused into this tab during an active match, they forfeit to lobby and opponent wins
+    let unfocusDebounceTimer = null;
+    const checkTabFocusLoss = () => {
+      if (unfocusDebounceTimer) clearTimeout(unfocusDebounceTimer);
+      unfocusDebounceTimer = setTimeout(() => {
+        if (document.hidden || !document.hasFocus()) {
+          if (this.matchManager && this.matchManager.isInActiveMatch()) {
+            this.matchManager.handleMatchForfeit('UNFOCUSED');
+          }
+        }
+      }, 120);
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || document.visibilityState === 'hidden') {
+        checkTabFocusLoss();
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      if (this.matchManager && this.matchManager.isOnQueuePad && this.mpClient) {
+        this.mpClient.stepOffQueuePad();
+      }
+      checkTabFocusLoss();
+    });
+
+    window.addEventListener('focus', () => {
+      if (unfocusDebounceTimer) {
+        clearTimeout(unfocusDebounceTimer);
+        unfocusDebounceTimer = null;
+      }
+    });
+
     // Weapon Switching hotkeys (1, 2, Q)
     this.controls.onSlotSwitch = (slot) => {
       let targetSlot = slot;
@@ -286,9 +320,15 @@ export class GameEngine {
       this.throwGrenade();
     };
 
-    // Return to Lobby (L)
+    // Return to Lobby / Forfeit Match (L)
     this.controls.onReturnLobby = () => {
-      this.matchManager.returnToLobby();
+      if (this.matchManager.isInActiveMatch()) {
+        this.matchManager.handleMatchForfeit('FORFEIT');
+      } else if (this.matchManager.state === 'TESTING_LAB') {
+        this.matchManager.leaveTestingLab();
+      } else {
+        this.matchManager.returnToLobby();
+      }
     };
 
     // Inspect (F)

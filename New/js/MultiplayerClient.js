@@ -210,6 +210,23 @@ export class MultiplayerClient {
     }));
   }
 
+  sendMatchExit(reason = 'FORFEIT') {
+    if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({
+      type: 'MATCH_EXIT',
+      reason: reason
+    }));
+    this.isTwoPlayerMatch = false;
+    this.currentMatchId = null;
+    this.currentOpponentId = null;
+    if (this.voteInterval) {
+      clearInterval(this.voteInterval);
+      this.voteInterval = null;
+    }
+    const voteOverlay = document.getElementById('map-vote-overlay');
+    if (voteOverlay) voteOverlay.style.display = 'none';
+  }
+
   createRemotePlayer(pInfo) {
     if (this.remotePlayers.has(pInfo.id)) return;
 
@@ -467,8 +484,8 @@ export class MultiplayerClient {
           this.game.matchManager.updateHUDScore();
         }
 
-        if (msg.reason === 'OPPONENT_DISCONNECTED') {
-          this.game.matchManager.triggerMatchVictory('OPPONENT_QUIT', msg.winnerUsername, msg.loserUsername);
+        if (msg.reason === 'OPPONENT_DISCONNECTED' || msg.reason === 'OPPONENT_QUIT' || msg.reason === 'UNFOCUSED' || msg.reason === 'FORFEIT') {
+          this.game.matchManager.triggerMatchVictory('OPPONENT_QUIT', msg.winnerUsername, msg.loserUsername, msg.reason);
         } else if (msg.isWinner) {
           this.game.matchManager.triggerMatchVictory('YOU', msg.winnerUsername, msg.loserUsername);
         } else {

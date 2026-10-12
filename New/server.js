@@ -986,11 +986,30 @@ function handleClientMessage(senderId, data) {
     case 'MATCH_EXIT':
       if (player.matchId) {
         const m = activeMatches.get(player.matchId);
-        if (m && m.timerInterval) {
-          clearTimeout(m.timerInterval);
-          clearInterval(m.timerInterval);
+        if (m) {
+          if (m.timerInterval) {
+            clearTimeout(m.timerInterval);
+            clearInterval(m.timerInterval);
+          }
+          const opponentId = (m.p1 === senderId) ? m.p2 : m.p1;
+          const opponent = clients.get(opponentId);
+          if (opponent && opponent.ws.readyState === opponent.ws.OPEN) {
+            const winnerUsername = opponent.username || opponentId;
+            const loserUsername = player.username || senderId;
+            opponent.ws.send(JSON.stringify({
+              type: 'MATCH_OVER',
+              winnerId: opponentId,
+              winnerUsername: winnerUsername,
+              loserUsername: loserUsername,
+              reason: data.reason || 'OPPONENT_QUIT',
+              isWinner: true,
+              scores: m.scores
+            }));
+            opponent.matchId = null;
+            opponent.onQueuePad = false;
+          }
+          activeMatches.delete(player.matchId);
         }
-        activeMatches.delete(player.matchId);
         player.matchId = null;
       }
       player.onQueuePad = false;

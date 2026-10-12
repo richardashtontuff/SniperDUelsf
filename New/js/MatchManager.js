@@ -505,8 +505,64 @@ export class MatchManager {
     this.updateStateBanner(`${resText} • ${killer.toUpperCase()} DEFEATED ${victim.toUpperCase()} (${this.scorePlayer} - ${this.scoreBot})`, true, resCol);
   }
 
+  isInActiveMatch() {
+    if (this.state === 'WARMUP' || this.state === 'ROUND_ACTIVE' || this.state === 'ROUND_INTERMISSION') {
+      return true;
+    }
+    if (this.isTwoPlayer && this.state !== 'LOBBY' && this.state !== 'MATCH_VICTORY' && this.state !== 'TESTING_LAB') {
+      return true;
+    }
+    if (this.mpClient && (this.mpClient.currentMatchId || this.mpClient.isTwoPlayerMatch)) {
+      return true;
+    }
+    return false;
+  }
+
+  handleMatchForfeit(reason = 'FORFEIT') {
+    if (!this.isInActiveMatch()) {
+      if (this.state === 'TESTING_LAB') {
+        this.leaveTestingLab();
+      }
+      return;
+    }
+
+    const myName = this.getLocalPlayerName();
+    const oppName = this.getOpponentPlayerName();
+    const isUnfocused = (reason === 'UNFOCUSED');
+
+    console.log(`[MatchManager] Match forfeit triggered (${reason}). Opponent (${oppName}) wins!`);
+
+    // 1. If 2-Player match, notify server so opponent receives the win
+    if (this.isTwoPlayer || (this.mpClient && this.mpClient.currentMatchId)) {
+      if (this.mpClient && typeof this.mpClient.sendMatchExit === 'function') {
+        this.mpClient.sendMatchExit(reason);
+      }
+    }
+
+    // 2. Local player loses: Deduct 100 coins
+    if (this.caseSystem && this.caseSystem.deductCoins) {
+      this.caseSystem.deductCoins(100);
+    }
+
+    this.audio.playRoundLost();
+
+    // 3. Immediately return local player to lobby with defeat state banner
+    this.returnToLobby();
+
+    const bannerMsg = isUnfocused
+      ? `TAB UNFOCUSED • YOU FORFEITED TO ${oppName.toUpperCase()} (-100 COINS)`
+      : `YOU FORFEITED/LEFT THE MATCH • ${oppName.toUpperCase()} WINS (-100 COINS)`;
+
+    this.updateStateBanner(bannerMsg, true, '#ff4444');
+    setTimeout(() => {
+      if (this.state === 'LOBBY') {
+        this.updateStateBanner('LOBBY PRACTICE - STEP ON A DUEL PAD TO PLAY', true, '#ffffff');
+      }
+    }, 4000);
+  }
+
   // Final Victory / Defeat Screen -> Ends Match & Returns to Lobby
-  triggerMatchVictory(winner, winnerUsername = null, loserUsername = null) {
+  triggerMatchVictory(winner, winnerUsername = null, loserUsername = null, reason = null) {
     this.state = 'MATCH_VICTORY';
     this.stateTimer = 3.5;
 
@@ -521,13 +577,21 @@ export class MatchManager {
       this.audio.playUnlockFanfare('legendary');
       this.particles.spawnVictoryConfetti(this.controls.getPosition());
     } else if (winner === 'OPPONENT_QUIT') {
-      this.updateStateBanner(`OPPONENT DISCONNECTED - ${myName.toUpperCase()} WINS (+150 COINS)`, true, '#f1c40f');
+      const killer = myName;
+      let reasonLabel = 'FORFEITED / LEFT';
+      if (reason === 'UNFOCUSED') reasonLabel = 'TABBED OUT';
+      else if (reason === 'OPPONENT_DISCONNECTED') reasonLabel = 'DISCONNECTED';
+      this.updateStateBanner(`OPPONENT ${reasonLabel} - ${killer.toUpperCase()} WINS (+150 COINS)`, true, '#f1c40f');
       this.caseSystem.addCoins(150);
       this.audio.playUnlockFanfare('rare');
+      this.particles.spawnVictoryConfetti(this.controls.getPosition());
     } else {
       const killer = winnerUsername || oppName;
       const victim = loserUsername || myName;
-      this.updateStateBanner(`DEFEAT! ${killer.toUpperCase()} DEFEATED ${victim.toUpperCase()} (${this.scoreBot} - ${this.scorePlayer})`, true, '#ff4444');
+      this.updateStateBanner(`DEFEAT! ${killer.toUpperCase()} DEFEATED ${victim.toUpperCase()} (${this.scoreBot} - ${this.scorePlayer}) (-100 COINS)`, true, '#ff4444');
+      if (this.caseSystem && this.caseSystem.deductCoins) {
+        this.caseSystem.deductCoins(100);
+      }
       this.audio.playRoundLost();
     }
   }
