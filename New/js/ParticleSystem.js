@@ -1,4 +1,4 @@
-// ParticleSystem.js - Fast visual FX: Tracers, Muzzle Flash, Ejected Shells, Sparks
+// ParticleSystem.js - Fast visual FX: Tracers, Muzzle Flash, Ejected Shells, Sparks, Atmosphere
 import * as THREE from '../vendor/three/three.module.js';
 
 export class ParticleSystem {
@@ -9,6 +9,9 @@ export class ParticleSystem {
     this.shells = [];
     this.confetti = [];
     this.explosions = [];
+    this.muzzleFlashes = [];
+    this.bulletHoles = [];
+    this.motes = null;
 
     this.sparkGeo = new THREE.BufferGeometry();
     const sparkPositions = new Float32Array([0, 0, 0]);
@@ -20,6 +23,100 @@ export class ParticleSystem {
       metalness: 0.85,
       roughness: 0.25
     });
+
+    // Reusable Unit Geometries for Tracers (Zero memory churn & GC stutter)
+    this.unitCylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
+    this.unitCylinderGeo.translate(0, 0.5, 0);
+    this.unitCylinderGeo.rotateX(Math.PI / 2);
+    this.unitTipGeo = new THREE.SphereGeometry(1, 8, 8);
+
+    // Muzzle Flash Point Light (reused for performance)
+    this.flashLight = new THREE.PointLight(0xffaa33, 0, 14);
+    this.scene.add(this.flashLight);
+    this.flashTimer = 0;
+
+    // Atmospheric Floating Dust / Cyber Motes
+    this.initAtmosphericMotes();
+  }
+
+  // Atmospheric micro-motes floating in the arena air
+  initAtmosphericMotes() {
+    const moteCount = 60;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(moteCount * 3);
+    const phases = new Float32Array(moteCount);
+
+    for (let i = 0; i < moteCount; i++) {
+      positions[i * 3 + 0] = (Math.random() - 0.5) * 60;
+      positions[i * 3 + 1] = Math.random() * 15 + 0.5;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 120;
+      phases[i] = Math.random() * Math.PI * 2;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.PointsMaterial({
+      color: 0x90e0ef,
+      size: 0.16,
+      transparent: true,
+      opacity: 0.45,
+      blending: THREE.AdditiveBlending
+    });
+
+    this.motes = new THREE.Points(geometry, material);
+    this.motes.userData = { phases, positions };
+    this.scene.add(this.motes);
+  }
+
+  // Dynamic Multi-Layered Volumetric Muzzle Flash with dynamic light cast
+  addMuzzleFlash(position, direction, scale = 1.0, color = 0xffaa22) {
+    const group = new THREE.Group();
+    group.position.copy(position);
+
+    // 1. Core Starburst Cross
+    const starGeo = new THREE.PlaneGeometry(0.55 * scale, 0.55 * scale);
+    const starMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+    const starMesh1 = new THREE.Mesh(starGeo, starMat);
+    const starMesh2 = new THREE.Mesh(starGeo, starMat);
+    starMesh2.rotation.z = Math.PI / 4;
+    group.add(starMesh1);
+    group.add(starMesh2);
+
+    // 2. Outer Fiery Glow Halo
+    const haloGeo = new THREE.SphereGeometry(0.38 * scale, 8, 8);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending
+    });
+    const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+    group.add(haloMesh);
+
+    // Orient along muzzle direction
+    group.lookAt(position.clone().add(direction));
+    this.scene.add(group);
+
+    // Trigger Dynamic Point Light Flash
+    this.flashLight.position.copy(position);
+    this.flashLight.color.setHex(color);
+    this.flashLight.intensity = 4.5 * scale;
+    this.flashTimer = 0.06;
+
+    this.muzzleFlashes.push({
+      group: group,
+      starMat: starMat,
+      haloMat: haloMat,
+      life: 0.055,
+      maxLife: 0.055,
+      scale: scale
+    });
   }
 
   // Thick, vibrant glowing bullet tracer beam from barrel to impact
@@ -30,10 +127,7 @@ export class ParticleSystem {
 
     const group = new THREE.Group();
 
-    // 1. Outer luminous glowing beam (Cylinder)
-    const outerGeo = new THREE.CylinderGeometry(0.12, 0.12, dist, 8, 1, true);
-    outerGeo.translate(0, dist / 2, 0);
-    outerGeo.rotateX(Math.PI / 2);
+    // 1. Outer luminous glowing beam (Scaled from unit cylinder)
     const outerMat = new THREE.MeshBasicMaterial({
       color: 0xffcc22,
       transparent: true,
@@ -41,13 +135,11 @@ export class ParticleSystem {
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide
     });
-    const outerMesh = new THREE.Mesh(outerGeo, outerMat);
+    const outerMesh = new THREE.Mesh(this.unitCylinderGeo, outerMat);
+    outerMesh.scale.set(0.12, 0.12, dist);
     group.add(outerMesh);
 
     // 2. Inner brilliant white-hot laser core
-    const innerGeo = new THREE.CylinderGeometry(0.05, 0.05, dist, 6, 1, true);
-    innerGeo.translate(0, dist / 2, 0);
-    innerGeo.rotateX(Math.PI / 2);
     const innerMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
@@ -55,18 +147,19 @@ export class ParticleSystem {
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide
     });
-    const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+    const innerMesh = new THREE.Mesh(this.unitCylinderGeo, innerMat);
+    innerMesh.scale.set(0.045, 0.045, dist);
     group.add(innerMesh);
 
     // 3. Glowing bullet head tip
-    const tipGeo = new THREE.SphereGeometry(0.15, 8, 8);
     const tipMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
       opacity: 1.0,
       blending: THREE.AdditiveBlending
     });
-    const tipMesh = new THREE.Mesh(tipGeo, tipMat);
+    const tipMesh = new THREE.Mesh(this.unitTipGeo, tipMat);
+    tipMesh.scale.set(0.15, 0.15, 0.15);
     tipMesh.position.copy(endVec);
     this.scene.add(tipMesh);
 
@@ -76,21 +169,27 @@ export class ParticleSystem {
 
     this.tracers.push({
       group: group,
+      outerMesh: outerMesh,
+      innerMesh: innerMesh,
       tip: tipMesh,
       outerMat: outerMat,
       innerMat: innerMat,
       tipMat: tipMat,
-      life: 0.45,
-      maxLife: 0.45
+      life: 0.42,
+      maxLife: 0.42
     });
   }
 
-  // Wall impact spark burst
-  addImpact(point, normal, color = 0xffcc44, count = 12) {
+  // Wall impact spark burst and bullet hole decal
+  addImpact(point, normal, color = 0xffcc44, count = 14) {
+    // 1. Bullet hole decal ring
+    this.addBulletHole(point, normal);
+
+    // 2. Directional spark shower
     for (let i = 0; i < count; i++) {
       const pMat = new THREE.PointsMaterial({
         color: color,
-        size: 0.08 + Math.random() * 0.06,
+        size: 0.09 + Math.random() * 0.08,
         transparent: true,
         opacity: 1.0,
         blending: THREE.AdditiveBlending
@@ -99,18 +198,47 @@ export class ParticleSystem {
       spark.position.copy(point);
 
       // Random velocity oriented around surface normal
-      const vel = normal.clone().multiplyScalar(2.0 + Math.random() * 4.0);
-      vel.x += (Math.random() - 0.5) * 4.0;
-      vel.y += (Math.random() - 0.5) * 4.0;
-      vel.z += (Math.random() - 0.5) * 4.0;
+      const vel = normal.clone().multiplyScalar(2.5 + Math.random() * 5.0);
+      vel.x += (Math.random() - 0.5) * 4.5;
+      vel.y += (Math.random() - 0.5) * 4.5;
+      vel.z += (Math.random() - 0.5) * 4.5;
 
       this.scene.add(spark);
       this.sparks.push({
         mesh: spark,
         vel: vel,
-        life: 0.35 + Math.random() * 0.2,
-        maxLife: 0.55
+        life: 0.35 + Math.random() * 0.25,
+        maxLife: 0.6
       });
+    }
+  }
+
+  // High-performance bullet mark decal
+  addBulletHole(point, normal) {
+    const holeGeo = new THREE.RingGeometry(0.02, 0.09, 12);
+    const holeMat = new THREE.MeshBasicMaterial({
+      color: 0x111317,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95
+    });
+    const hole = new THREE.Mesh(holeGeo, holeMat);
+    hole.position.copy(point).addScaledVector(normal, 0.015);
+    hole.lookAt(point.clone().add(normal));
+
+    this.scene.add(hole);
+    this.bulletHoles.push({
+      mesh: hole,
+      life: 8.0,
+      maxLife: 8.0
+    });
+
+    // Cap total active bullet marks to 30 for performance
+    if (this.bulletHoles.length > 30) {
+      const oldest = this.bulletHoles.shift();
+      this.scene.remove(oldest.mesh);
+      oldest.mesh.geometry.dispose();
+      oldest.mesh.material.dispose();
     }
   }
 
@@ -311,12 +439,9 @@ export class ParticleSystem {
       if (t.life <= 0) {
         this.scene.remove(t.group);
         this.scene.remove(t.tip);
-        t.group.traverse(obj => {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) obj.material.dispose();
-        });
-        if (t.tip.geometry) t.tip.geometry.dispose();
-        if (t.tip.material) t.tip.material.dispose();
+        if (t.outerMat) t.outerMat.dispose();
+        if (t.innerMat) t.innerMat.dispose();
+        if (t.tipMat) t.tipMat.dispose();
         this.tracers.splice(i, 1);
       }
     }
@@ -443,6 +568,68 @@ export class ParticleSystem {
 
       if (exp.life <= 0) {
         this.explosions.splice(i, 1);
+      }
+    }
+
+    // 6. Update Muzzle Flashes & Light
+    if (this.flashTimer > 0) {
+      this.flashTimer -= delta;
+      if (this.flashTimer <= 0) {
+        this.flashLight.intensity = 0;
+      }
+    }
+
+    for (let i = this.muzzleFlashes.length - 1; i >= 0; i--) {
+      const mf = this.muzzleFlashes[i];
+      mf.life -= delta;
+      const progress = Math.max(0, mf.life / mf.maxLife);
+      mf.starMat.opacity = progress;
+      mf.haloMat.opacity = progress * 0.8;
+      const curScale = mf.scale * (1.0 + (1.0 - progress) * 0.8);
+      mf.group.scale.set(curScale, curScale, curScale);
+
+      if (mf.life <= 0) {
+        this.scene.remove(mf.group);
+        mf.group.traverse(obj => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) obj.material.dispose();
+        });
+        this.muzzleFlashes.splice(i, 1);
+      }
+    }
+
+    // 7. Update Atmospheric Floating Motes
+    if (this.motes && this.motes.geometry) {
+      const posAttr = this.motes.geometry.attributes.position;
+      const arr = posAttr.array;
+      const phases = this.motes.userData.phases;
+      const time = performance.now() * 0.001;
+
+      for (let i = 0; i < phases.length; i++) {
+        // Drift in gentle sinusoidal patterns
+        arr[i * 3 + 0] += Math.sin(time * 0.4 + phases[i]) * 0.004;
+        arr[i * 3 + 1] += Math.cos(time * 0.6 + phases[i]) * 0.003;
+        arr[i * 3 + 2] += Math.sin(time * 0.3 + phases[i] * 2.0) * 0.004;
+
+        // Wrap around bounds
+        if (arr[i * 3 + 1] < 0.2) arr[i * 3 + 1] = 14.0;
+        if (arr[i * 3 + 1] > 15.0) arr[i * 3 + 1] = 0.5;
+      }
+      posAttr.needsUpdate = true;
+    }
+
+    // 8. Update Bullet Hole Decals
+    for (let i = this.bulletHoles.length - 1; i >= 0; i--) {
+      const bh = this.bulletHoles[i];
+      bh.life -= delta;
+      if (bh.life < 1.0) {
+        bh.mesh.material.opacity = Math.max(0, bh.life);
+      }
+      if (bh.life <= 0) {
+        this.scene.remove(bh.mesh);
+        bh.mesh.geometry.dispose();
+        bh.mesh.material.dispose();
+        this.bulletHoles.splice(i, 1);
       }
     }
   }

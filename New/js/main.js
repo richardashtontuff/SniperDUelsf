@@ -69,56 +69,67 @@ export class GameEngine {
     const initW = window.innerWidth > 0 ? window.innerWidth : 800;
     const initH = window.innerHeight > 0 ? window.innerHeight : 600;
 
-    // 1. Core WebGL Renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // 1. Core WebGL Renderer (Optimized for High Framerate & Crisp Esports Visuals)
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+      stencil: false
+    });
     this.renderer.setSize(initW, initH);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(0x232a38, 1);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.setClearColor(0x0c1322, 1);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
-    // 2. World Scene & Atmospheric Lighting
+    // 2. World Scene & Atmospheric Lighting (Cinematic Esports Arena)
     this.worldScene = new THREE.Scene();
-    this.worldScene.background = new THREE.Color(0x232a38);
-    this.worldScene.fog = new THREE.Fog(0x232a38, 120, 350);
+    this.worldScene.background = new THREE.Color(0x0c1322);
+    this.worldScene.fog = new THREE.FogExp2(0x0c1322, 0.0055);
 
-    // Hemisphere skylight (strong ambient fill)
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x556677, 1.4);
+    // Hemisphere skylight (vibrant cyan zenith + deep indigo bounce fill)
+    const hemiLight = new THREE.HemisphereLight(0xdaf0ff, 0x141f33, 1.35);
     this.worldScene.add(hemiLight);
 
-    // Sun Directional Light
-    const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.6);
-    dirLight.position.set(30, 45, 20);
+    // Primary Sun Directional Light (crisp warm key light + tight high-res shadow frustum)
+    const dirLight = new THREE.DirectionalLight(0xfffaee, 2.1);
+    dirLight.position.set(32, 50, 22);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
     dirLight.shadow.camera.near = 10;
     dirLight.shadow.camera.far = 160;
-    dirLight.shadow.camera.left = -40;
-    dirLight.shadow.camera.right = 40;
-    dirLight.shadow.camera.top = 70;
-    dirLight.shadow.camera.bottom = -70;
-    dirLight.shadow.bias = -0.0005;
+    dirLight.shadow.camera.left = -30;
+    dirLight.shadow.camera.right = 30;
+    dirLight.shadow.camera.top = 55;
+    dirLight.shadow.camera.bottom = -55;
+    dirLight.shadow.bias = -0.0002;
+    dirLight.shadow.normalBias = 0.025;
     this.worldScene.add(dirLight);
 
+    // Secondary Cool Blue Rim Light (rim lighting on players and weapon silhouettes)
+    const rimDirLight = new THREE.DirectionalLight(0x00d2ff, 0.55);
+    rimDirLight.position.set(-25, 20, -35);
+    this.worldScene.add(rimDirLight);
+
     // Overhead Lobby Spot/Point Lights
-    const lobbyCenterLight = new THREE.PointLight(0x00ffff, 3.5, 45);
-    lobbyCenterLight.position.set(0, 7, -100);
+    const lobbyCenterLight = new THREE.PointLight(0x00ffff, 4.0, 48);
+    lobbyCenterLight.position.set(0, 7.5, -100);
     this.worldScene.add(lobbyCenterLight);
 
-    const targetRangeLight = new THREE.PointLight(0xffffff, 3.0, 40);
-    targetRangeLight.position.set(0, 6, -118);
+    const targetRangeLight = new THREE.PointLight(0xffffff, 3.2, 42);
+    targetRangeLight.position.set(0, 6.5, -118);
     this.worldScene.add(targetRangeLight);
 
-    const shopLight = new THREE.PointLight(0xffaa00, 2.5, 30);
-    shopLight.position.set(-16, 6, -85);
+    const shopLight = new THREE.PointLight(0xffaa00, 2.8, 32);
+    shopLight.position.set(-16, 6.5, -85);
     this.worldScene.add(shopLight);
 
-    const mapTermLight = new THREE.PointLight(0x00d2ff, 2.5, 30);
-    mapTermLight.position.set(16, 6, -85);
+    const mapTermLight = new THREE.PointLight(0x00d2ff, 2.8, 32);
+    mapTermLight.position.set(16, 6.5, -85);
     this.worldScene.add(mapTermLight);
 
     // 3. Subsystems
@@ -144,6 +155,7 @@ export class GameEngine {
       this.audio,
       this.particles
     );
+    this.weaponSystem.setCameraManager(this.cameraManager);
 
     // 7. Bot Opponent
     this.bot = new BotAI(
@@ -187,6 +199,16 @@ export class GameEngine {
 
     // Clock
     this.clock = new THREE.Clock();
+
+    window.__gameEngineInstance = this;
+
+    // Render initial frame immediately so the 3D scene is drawn on canvas
+    this.cameraManager.render(this.worldScene, this.weaponSystem.vmScene, this.weaponSystem.currentSlot);
+
+    // If user clicked play before engine initialized, start now
+    if (window.__pendingStart && typeof window.onStartGameClick === 'function') {
+      window.onStartGameClick();
+    }
 
     // Start render loop
     this.animate = this.animate.bind(this);
@@ -1821,6 +1843,11 @@ export class GameEngine {
 
     // 3. Update Camera Zoom for ADS (tactical 52° for AR, 20° high zoom for Sniper)
     this.cameraManager.updateADS(this.weaponSystem.adsProgress, delta, this.weaponSystem.currentSlot);
+    this.cameraManager.updateTrauma(delta);
+
+    // Dynamic weapon strafe banking
+    if (this.controls.moveLeft) this.weaponSystem.addStrafeTilt(1);
+    if (this.controls.moveRight) this.weaponSystem.addStrafeTilt(-1);
 
     // 4. Update Particle Effects (tracers, sparks, ejected shells, confetti)
     this.particles.update(delta);
@@ -1871,6 +1898,9 @@ function initGame() {
   if (window.__gameEngineInstance) return;
   try {
     window.__gameEngineInstance = new GameEngine();
+    if (window.__pendingStart && typeof window.onStartGameClick === 'function') {
+      window.onStartGameClick();
+    }
   } catch (err) {
     console.error('Failed to initialize GameEngine:', err);
   }

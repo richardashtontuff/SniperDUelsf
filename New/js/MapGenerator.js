@@ -27,6 +27,12 @@ export class MapGenerator {
     this.poolTileTexture = this.generateTileTexture('#00b4d8', '#0077b6');
     this.rooftopTexture = this.generateStudTexture('#343d4d', '#49556b');
 
+    // Advanced Pro Esports Procedural Textures (High-tech composite panels & military containers)
+    this.proFloorTexture = this.generateProFloorTexture('#1a202c', '#00d2ff', 'rgba(0, 210, 255, 0.18)');
+    this.proCrateTexture = this.generateSciFiCrateTexture('#28313e', '#ffaa00');
+    this.proCrateBlueTexture = this.generateSciFiCrateTexture('#1e293b', '#00d2ff');
+    this.proCrateOrangeTexture = this.generateSciFiCrateTexture('#1e293b', '#ff6600');
+
     // Groups
     this.lobbyGroup = new THREE.Group();
     this.lobbyGroup.name = 'LobbyGroup';
@@ -38,24 +44,31 @@ export class MapGenerator {
 
     // Water mesh for Pool Day
     this.waterMesh = null;
+    this.skyMesh = null;
 
     // Callbacks
     this.onMapChanged = null;
   }
 
-  // Generates classic Roblox circular stud texture onto an HTML5 Canvas
+  // Generates high-fidelity competitive Roblox beveled stud texture
   generateStudTexture(baseColorHex, studColorHex) {
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 128;
     const ctx = canvas.getContext('2d');
 
+    // Base surface with subtle beveled tile frame
     ctx.fillStyle = baseColorHex;
     ctx.fillRect(0, 0, 128, 128);
 
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+    // Bevel tile border highlights
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, 126, 126);
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2, 2, 124, 124);
 
     const studPositions = [
       { x: 32, y: 32 }, { x: 96, y: 32 },
@@ -63,20 +76,125 @@ export class MapGenerator {
     ];
 
     studPositions.forEach(p => {
+      // 1. Ambient occlusion contact shadow ring
       ctx.beginPath();
-      ctx.arc(p.x, p.y + 2, 17, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.arc(p.x, p.y + 2.5, 18, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fill();
 
+      // 2. Main cylindrical stud body
       ctx.beginPath();
       ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
       ctx.fillStyle = studColorHex;
       ctx.fill();
 
-      const grad = ctx.createLinearGradient(p.x - 12, p.y - 12, p.x + 12, p.y + 12);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0.2)');
+      // 3. Realistic 3D directional specular gradient
+      const grad = ctx.createLinearGradient(p.x - 14, p.y - 14, p.x + 14, p.y + 14);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+      grad.addColorStop(0.4, 'rgba(255, 255, 255, 0.15)');
+      grad.addColorStop(0.8, 'rgba(0, 0, 0, 0.15)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0.45)');
       ctx.fillStyle = grad;
+      ctx.fill();
+
+      // 4. Subtle top circular rim highlight
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 1, 15, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+  }
+
+  // Generates diagonal high-visibility hazard warning stripes
+  generateHazardTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillRect(0, 0, 128, 128);
+
+    ctx.fillStyle = '#181a1f';
+    ctx.beginPath();
+    for (let x = -128; x < 256; x += 32) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 16, 0);
+      ctx.lineTo(x + 16 + 128, 128);
+      ctx.lineTo(x + 128, 128);
+      ctx.closePath();
+    }
+    ctx.fill();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+  }
+
+  // High-Tech Esports Carbon-Composite Floor with laser grid seams & bevels
+  generateProFloorTexture(baseColorHex, accentColorHex, gridColorHex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    // Base carbon plate
+    ctx.fillStyle = baseColorHex;
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Beveled quadrant seams
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 252, 252);
+    ctx.strokeRect(2, 2, 126, 126);
+    ctx.strokeRect(128, 2, 126, 126);
+    ctx.strokeRect(2, 128, 126, 126);
+    ctx.strokeRect(128, 128, 126, 126);
+
+    // Fine highlight seams
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(4, 4, 122, 122);
+    ctx.strokeRect(130, 4, 122, 122);
+    ctx.strokeRect(4, 130, 122, 122);
+    ctx.strokeRect(130, 130, 122, 122);
+
+    // Cyber Laser Grid Lines
+    ctx.strokeStyle = gridColorHex || 'rgba(0, 210, 255, 0.2)';
+    ctx.lineWidth = 1;
+    for (let i = 24; i < 256; i += 32) {
+      ctx.beginPath();
+      ctx.moveTo(i, 4);
+      ctx.lineTo(i, 252);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(4, i);
+      ctx.lineTo(252, i);
+      ctx.stroke();
+    }
+
+    // Corner rivets on each quadrant
+    const rivets = [
+      { x: 12, y: 12 }, { x: 118, y: 12 }, { x: 12, y: 118 }, { x: 118, y: 118 },
+      { x: 138, y: 12 }, { x: 244, y: 12 }, { x: 138, y: 118 }, { x: 244, y: 118 },
+      { x: 12, y: 138 }, { x: 118, y: 138 }, { x: 12, y: 244 }, { x: 118, y: 244 },
+      { x: 138, y: 138 }, { x: 244, y: 138 }, { x: 138, y: 244 }, { x: 244, y: 244 }
+    ];
+    rivets.forEach(r => {
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(r.x - 0.5, r.y - 0.5, 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
       ctx.fill();
     });
 
@@ -84,6 +202,158 @@ export class MapGenerator {
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     return texture;
+  }
+
+  // Tactical Sci-Fi Military Supply Container with Carbon Inset & Glowing LEDs
+  generateSciFiCrateTexture(baseColorHex, teamColorHex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    // Base metal frame
+    ctx.fillStyle = baseColorHex;
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Beveled outer border
+    ctx.strokeStyle = '#10141b';
+    ctx.lineWidth = 14;
+    ctx.strokeRect(7, 7, 242, 242);
+
+    // Inner carbon weave panel
+    ctx.fillStyle = '#171b23';
+    ctx.fillRect(24, 24, 208, 208);
+
+    // Micro-weave checker
+    ctx.fillStyle = '#12151c';
+    for (let y = 24; y < 232; y += 8) {
+      for (let x = 24; x < 232; x += 8) {
+        if ((x + y) % 16 === 0) {
+          ctx.fillRect(x, y, 8, 8);
+        }
+      }
+    }
+
+    // High-visibility hazard diagonal band across center
+    ctx.fillStyle = teamColorHex || '#ffaa00';
+    ctx.fillRect(24, 114, 208, 28);
+    ctx.fillStyle = '#10141b';
+    for (let x = 24; x < 232; x += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x, 114);
+      ctx.lineTo(x + 12, 114);
+      ctx.lineTo(x + 2, 142);
+      ctx.lineTo(x - 10, 142);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Glowing status indicator LED bars
+    ctx.fillStyle = teamColorHex || '#00e5ff';
+    ctx.fillRect(40, 40, 36, 6);
+    ctx.fillRect(82, 40, 12, 6);
+    ctx.fillRect(100, 40, 12, 6);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+  }
+
+  // Generates atmospheric panoramic Sky Dome tailored to active arena
+  updateSkyDome(mapName) {
+    if (!this.skyMesh) {
+      const skyGeo = new THREE.SphereGeometry(500, 32, 16);
+      const skyMat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, depthWrite: false });
+      this.skyMesh = new THREE.Mesh(skyGeo, skyMat);
+      this.scene.add(this.skyMesh);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+
+    if (mapName === 'poolday') {
+      // Azure resort midday
+      grad.addColorStop(0, '#005f9e');
+      grad.addColorStop(0.45, '#0096c7');
+      grad.addColorStop(0.75, '#48cae4');
+      grad.addColorStop(0.88, '#ade8f4');
+      grad.addColorStop(1, '#caf0f8');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1024, 512);
+
+      // Sun disc flare
+      ctx.beginPath();
+      ctx.arc(680, 120, 48, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(680, 120, 95, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 235, 180, 0.28)';
+      ctx.fill();
+
+      this.scene.fog = new THREE.Fog(0x90e0ef, 130, 400);
+      this.scene.background = new THREE.Color(0x90e0ef);
+    } else if (mapName === 'rooftop') {
+      // Twilight Cyberpunk Metropolis
+      grad.addColorStop(0, '#070314');
+      grad.addColorStop(0.45, '#190a34');
+      grad.addColorStop(0.78, '#3f1159');
+      grad.addColorStop(0.88, '#9a1663');
+      grad.addColorStop(1, '#e01e5a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1024, 512);
+
+      // Distant silhouetted skyscraper skyline along horizon
+      ctx.fillStyle = '#0a0518';
+      let cx = 0;
+      while (cx < 1024) {
+        const bw = 24 + Math.random() * 32;
+        const bh = 40 + Math.random() * 85;
+        ctx.fillRect(cx, 512 - bh, bw, bh);
+
+        // Blinking red aviation warning lights on skyscraper antenna tips
+        if (Math.random() > 0.4) {
+          ctx.beginPath();
+          ctx.arc(cx + bw / 2, 512 - bh - 4, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#ff0044';
+          ctx.fill();
+          ctx.fillStyle = '#0a0518';
+        }
+        cx += bw + 4;
+      }
+
+      this.scene.fog = new THREE.Fog(0x190a34, 100, 360);
+      this.scene.background = new THREE.Color(0x190a34);
+    } else {
+      // Blockout: High-Tech Competitive Cyber Arena
+      grad.addColorStop(0, '#070b14');
+      grad.addColorStop(0.45, '#0f1828');
+      grad.addColorStop(0.75, '#15253e');
+      grad.addColorStop(0.88, '#183856');
+      grad.addColorStop(1, '#00d2ff');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1024, 512);
+
+      // Distant stadium floodlight silhouettes along horizon
+      ctx.fillStyle = '#0b1220';
+      for (let x = 40; x < 1024; x += 120) {
+        ctx.fillRect(x, 440, 12, 72);
+        ctx.fillRect(x - 14, 432, 40, 10);
+      }
+
+      this.scene.fog = new THREE.Fog(0x0f1828, 110, 370);
+      this.scene.background = new THREE.Color(0x0f1828);
+    }
+
+    const skyTex = new THREE.CanvasTexture(canvas);
+    if (this.skyMesh.material.map) this.skyMesh.material.map.dispose();
+    this.skyMesh.material.map = skyTex;
+    this.skyMesh.material.needsUpdate = true;
   }
 
   generateTileTexture(c1, c2) {
@@ -116,6 +386,9 @@ export class MapGenerator {
   // Switch active arena dynamically
   loadArena(mapName) {
     this.currentMapName = mapName;
+
+    // Update panoramic Sky Dome & lighting atmosphere
+    this.updateSkyDome(mapName);
 
     // Clear previous arena
     while (this.arenaGroup.children.length > 0) {
@@ -213,61 +486,206 @@ export class MapGenerator {
     this.spawnBlue.set(0, 2.55, 55);
     this.spawnOrange.set(0, 2.55, -25);
 
-    const floorMat = new THREE.MeshStandardMaterial({ map: this.studTextureFloor, roughness: 0.6, metalness: 0.1 });
-    floorMat.map.repeat.set(16, 32);
+    // High-tech Carbon-Composite Floor with Laser Seams
+    const floorMat = new THREE.MeshStandardMaterial({
+      map: this.proFloorTexture,
+      roughness: 0.35,
+      metalness: 0.28
+    });
+    floorMat.map.repeat.set(11, 25);
 
     this.createBox(0, 0, 15, 44, 0.5, 100, floorMat, this.arenaGroup);
 
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1f2228, roughness: 0.8 });
+    // Glowing Neon Floor Guide Tracks (Blue & Orange Lanes leading to center)
+    const blueTrackMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
+    const orangeTrackMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+    const centerTrackMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    const track1 = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 30), blueTrackMat);
+    track1.rotation.x = -Math.PI / 2;
+    track1.position.set(-6, 0.51, 35);
+    this.arenaGroup.add(track1);
+
+    const track2 = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 30), blueTrackMat);
+    track2.rotation.x = -Math.PI / 2;
+    track2.position.set(6, 0.51, 35);
+    this.arenaGroup.add(track2);
+
+    const track3 = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 30), orangeTrackMat);
+    track3.rotation.x = -Math.PI / 2;
+    track3.position.set(-6, 0.51, -5);
+    this.arenaGroup.add(track3);
+
+    const track4 = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 30), orangeTrackMat);
+    track4.rotation.x = -Math.PI / 2;
+    track4.position.set(6, 0.51, -5);
+    this.arenaGroup.add(track4);
+
+    // Perimeter Arena Walls (Sleek Dark Titanium with Metallic Bevels)
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0x141822,
+      roughness: 0.45,
+      metalness: 0.55
+    });
     this.createBox(-22, 0.5, 15, 1.5, 9, 100, wallMat, this.arenaGroup);
     this.createBox(22, 0.5, 15, 1.5, 9, 100, wallMat, this.arenaGroup);
     this.createBox(0, 0.5, -35, 44, 9, 1.5, wallMat, this.arenaGroup);
     this.createBox(0, 0.5, 65, 44, 9, 1.5, wallMat, this.arenaGroup);
 
-    const blueMat = new THREE.MeshStandardMaterial({ map: this.studTextureBlue, roughness: 0.5 });
+    // Wall Glow Stripes (Cyan for South/Blue, Orange for North/Orange)
+    const wallStripeBlue = new THREE.Mesh(
+      new THREE.BoxGeometry(43.8, 0.25, 0.1),
+      new THREE.MeshStandardMaterial({ color: 0x00d2ff, emissive: 0x00d2ff, emissiveIntensity: 0.8 })
+    );
+    wallStripeBlue.position.set(0, 5.0, 64.2);
+    this.arenaGroup.add(wallStripeBlue);
+
+    const wallStripeOrange = new THREE.Mesh(
+      new THREE.BoxGeometry(43.8, 0.25, 0.1),
+      new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff6600, emissiveIntensity: 0.8 })
+    );
+    wallStripeOrange.position.set(0, 5.0, -34.2);
+    this.arenaGroup.add(wallStripeOrange);
+
+    // Team High Perch Materials
+    const blueMat = new THREE.MeshStandardMaterial({
+      map: this.studTextureBlue,
+      roughness: 0.38,
+      metalness: 0.35
+    });
     blueMat.map.repeat.set(4, 3);
-    const orangeMat = new THREE.MeshStandardMaterial({ map: this.studTextureOrange, roughness: 0.5 });
+
+    const orangeMat = new THREE.MeshStandardMaterial({
+      map: this.studTextureOrange,
+      roughness: 0.38,
+      metalness: 0.35
+    });
     orangeMat.map.repeat.set(4, 3);
 
-    // Blue Team High Perch & Ramp (extended flush to back wall to eliminate trench gap)
+    // Blue Team High Perch & Ramp (extended flush to back wall)
     this.createBox(0, 0.5, 56.5, 28, 2.0, 16, blueMat, this.arenaGroup);
     this.createRamp(0, 0.5, 45, 12, 2.0, 7, blueMat, this.arenaGroup, 'south');
     this.createRamp(-16, 0.5, 52, 4, 2.0, 9, blueMat, this.arenaGroup, 'south');
     this.createRamp(16, 0.5, 52, 4, 2.0, 9, blueMat, this.arenaGroup, 'south');
 
-    // Orange Team High Perch & Ramp (extended flush to back wall to eliminate trench gap)
+    // Glowing Neon Edge Line along Blue Perch
+    const blueEdge = new THREE.Mesh(
+      new THREE.BoxGeometry(28, 0.12, 0.2),
+      new THREE.MeshStandardMaterial({ color: 0x00d2ff, emissive: 0x00d2ff, emissiveIntensity: 1.0 })
+    );
+    blueEdge.position.set(0, 2.56, 48.5);
+    this.arenaGroup.add(blueEdge);
+
+    // Orange Team High Perch & Ramp (extended flush to back wall)
     this.createBox(0, 0.5, -26.5, 28, 2.0, 16, orangeMat, this.arenaGroup);
     this.createRamp(0, 0.5, -15, 12, 2.0, 7, orangeMat, this.arenaGroup, 'north');
     this.createRamp(-16, 0.5, -22, 4, 2.0, 9, orangeMat, this.arenaGroup, 'north');
     this.createRamp(16, 0.5, -22, 4, 2.0, 9, orangeMat, this.arenaGroup, 'north');
 
-    // Mid Bridge
-    const midBridgeMat = new THREE.MeshStandardMaterial({ color: 0x434c5e, roughness: 0.5 });
+    // Glowing Neon Edge Line along Orange Perch
+    const orangeEdge = new THREE.Mesh(
+      new THREE.BoxGeometry(28, 0.12, 0.2),
+      new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff6600, emissiveIntensity: 1.0 })
+    );
+    orangeEdge.position.set(0, 2.56, -18.5);
+    this.arenaGroup.add(orangeEdge);
+
+    // Mid Bridge (Elevated Tactical Center)
+    const midBridgeMat = new THREE.MeshStandardMaterial({
+      color: 0x2d3442,
+      roughness: 0.35,
+      metalness: 0.5
+    });
     this.createBox(0, 0.5, 15, 16, 2.2, 10, midBridgeMat, this.arenaGroup);
     this.createRamp(0, 0.5, 8, 8, 2.2, 4, midBridgeMat, this.arenaGroup, 'south');
     this.createRamp(0, 0.5, 22, 8, 2.2, 4, midBridgeMat, this.arenaGroup, 'north');
 
-    const railMat = new THREE.MeshStandardMaterial({ color: 0x88c0d0, emissive: 0x003344 });
+    // Glowing Neon Rails & Edge Accents
+    const railMat = new THREE.MeshStandardMaterial({
+      color: 0x00d2ff,
+      emissive: 0x0099cc,
+      emissiveIntensity: 0.85,
+      roughness: 0.15
+    });
     this.createBox(-7.5, 2.7, 15, 0.4, 1.0, 10, railMat, this.arenaGroup);
     this.createBox(7.5, 2.7, 15, 0.4, 1.0, 10, railMat, this.arenaGroup);
 
-    // Tactical Cover Blocks
-    const crateMat = new THREE.MeshStandardMaterial({ map: this.studTexture, roughness: 0.5 });
-    crateMat.map.repeat.set(2, 2);
+    // Center Duel Circle Marker on Bridge
+    const duelRingGeo = new THREE.RingGeometry(1.6, 1.9, 32);
+    duelRingGeo.rotateX(-Math.PI / 2);
+    const duelRingMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide });
+    const duelRing = new THREE.Mesh(duelRingGeo, duelRingMat);
+    duelRing.position.set(0, 2.71, 15);
+    this.arenaGroup.add(duelRing);
+
+    // Hazard Stripes on Bridge Edges
+    const hazardMat = new THREE.MeshBasicMaterial({ map: this.generateHazardTexture() });
+    hazardMat.map.repeat.set(4, 1);
+    const hz1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 10), hazardMat);
+    hz1.position.set(-7.7, 2.72, 15);
+    this.arenaGroup.add(hz1);
+    const hz2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.15, 10), hazardMat);
+    hz2.position.set(7.7, 2.72, 15);
+    this.arenaGroup.add(hz2);
+
+    // Arena Stadium Floodlight Towers (4 corners)
+    const towerPositions = [
+      { x: -20, z: -32, lightColor: 0xff851b },
+      { x: 20, z: -32, lightColor: 0xff851b },
+      { x: -20, z: 62, lightColor: 0x00d2ff },
+      { x: 20, z: 62, lightColor: 0x00d2ff }
+    ];
+
+    towerPositions.forEach(tp => {
+      // Steel lattice pole
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.25, 0.35, 14, 8),
+        new THREE.MeshStandardMaterial({ color: 0x1e2430, metalness: 0.85, roughness: 0.25 })
+      );
+      pole.position.set(tp.x, 7.5, tp.z);
+      this.arenaGroup.add(pole);
+
+      // Light head bracket
+      const head = new THREE.Mesh(
+        new THREE.BoxGeometry(1.8, 1.0, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0x10141d, metalness: 0.9, roughness: 0.2 })
+      );
+      head.position.set(tp.x, 14.5, tp.z);
+      this.arenaGroup.add(head);
+
+      // Glowing lens panel
+      const lens = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.6, 0.8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      lens.position.set(tp.x, 14.5, tp.z + (tp.z > 0 ? -0.41 : 0.41));
+      lens.rotation.y = tp.z > 0 ? Math.PI : 0;
+      this.arenaGroup.add(lens);
+
+      // Soft floodlight glow
+      const flood = new THREE.PointLight(tp.lightColor, 2.4, 48);
+      flood.position.set(tp.x, 14.0, tp.z + (tp.z > 0 ? -2.0 : 2.0));
+      this.arenaGroup.add(flood);
+    });
+
+    // High-End Tactical Military Crates with Team Accents
+    const crateMatBlue = new THREE.MeshStandardMaterial({ map: this.proCrateBlueTexture, roughness: 0.4, metalness: 0.3 });
+    const crateMatOrange = new THREE.MeshStandardMaterial({ map: this.proCrateOrangeTexture, roughness: 0.4, metalness: 0.3 });
+    const crateMatMid = new THREE.MeshStandardMaterial({ map: this.proCrateTexture, roughness: 0.4, metalness: 0.3 });
 
     const crates = [
-      { x: -14, z: 35, w: 3.5, h: 2.2, d: 3.5 },
-      { x: -12, z: 15, w: 3.0, h: 2.5, d: 5.0 },
-      { x: -14, z: -5, w: 3.5, h: 2.2, d: 3.5 },
-      { x: 14, z: 35, w: 3.5, h: 2.2, d: 3.5 },
-      { x: 12, z: 15, w: 3.0, h: 2.5, d: 5.0 },
-      { x: 14, z: -5, w: 3.5, h: 2.2, d: 3.5 },
-      { x: -6, z: 49, w: 2.5, h: 1.3, d: 2.5 },
-      { x: 6, z: 49, w: 2.5, h: 1.3, d: 2.5 },
-      { x: -6, z: -19, w: 2.5, h: 1.3, d: 2.5 },
-      { x: 6, z: -19, w: 2.5, h: 1.3, d: 2.5 }
+      { x: -14, z: 35, w: 3.5, h: 2.2, d: 3.5, mat: crateMatBlue },
+      { x: -12, z: 15, w: 3.0, h: 2.5, d: 5.0, mat: crateMatMid },
+      { x: -14, z: -5, w: 3.5, h: 2.2, d: 3.5, mat: crateMatOrange },
+      { x: 14, z: 35, w: 3.5, h: 2.2, d: 3.5, mat: crateMatBlue },
+      { x: 12, z: 15, w: 3.0, h: 2.5, d: 5.0, mat: crateMatMid },
+      { x: 14, z: -5, w: 3.5, h: 2.2, d: 3.5, mat: crateMatOrange },
+      { x: -6, z: 49, w: 2.5, h: 1.3, d: 2.5, mat: crateMatBlue },
+      { x: 6, z: 49, w: 2.5, h: 1.3, d: 2.5, mat: crateMatBlue },
+      { x: -6, z: -19, w: 2.5, h: 1.3, d: 2.5, mat: crateMatOrange },
+      { x: 6, z: -19, w: 2.5, h: 1.3, d: 2.5, mat: crateMatOrange }
     ];
-    crates.forEach(c => this.createBox(c.x, 0.5, c.z, c.w, c.h, c.d, crateMat, this.arenaGroup));
+    crates.forEach(c => this.createBox(c.x, 0.5, c.z, c.w, c.h, c.d, c.mat, this.arenaGroup));
 
     this.blueBarrier = this.createBarrier(0, 2.5, 47, 24, 6, 0x00d2ff);
     this.orangeBarrier = this.createBarrier(0, 2.5, -17, 24, 6, 0xff7700);

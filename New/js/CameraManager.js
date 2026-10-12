@@ -19,18 +19,41 @@ export class CameraManager {
     // Viewmodel scene
     this.vmScene = new THREE.Scene();
 
-    // Lighting for Viewmodel so weapons always look vibrant and distinct
-    const vmAmbient = new THREE.AmbientLight(0xffffff, 1.2);
+    // Lighting for Viewmodel so weapons always look vibrant, metallic, and crisp
+    const vmAmbient = new THREE.AmbientLight(0xffffff, 1.25);
     this.vmScene.add(vmAmbient);
-    const vmDirectional = new THREE.DirectionalLight(0xffffff, 1.6);
-    vmDirectional.position.set(2, 4, 3);
+    const vmDirectional = new THREE.DirectionalLight(0xfffaea, 1.85);
+    vmDirectional.position.set(2.5, 4.2, 3.0);
     this.vmScene.add(vmDirectional);
-    const vmRimLight = new THREE.DirectionalLight(0x00d2ff, 0.8);
-    vmRimLight.position.set(-2, -1, -2);
+    const vmRimLight = new THREE.DirectionalLight(0x00e5ff, 0.95);
+    vmRimLight.position.set(-2.5, -1.0, -2.0);
     this.vmScene.add(vmRimLight);
+    const vmWarmFill = new THREE.DirectionalLight(0xff8833, 0.4);
+    vmWarmFill.position.set(0, -3.0, 1.5);
+    this.vmScene.add(vmWarmFill);
 
     // Scope Overlay DOM Element
     this.scopeOverlay = document.getElementById('sniper-scope-overlay');
+
+    // Camera Trauma & Screen Shake Engine
+    this.trauma = 0;
+    this.shakeRot = new THREE.Euler(0, 0, 0);
+  }
+
+  // Adds procedural trauma (clamped 0 to 1) for physical recoil and explosions
+  addTrauma(val) {
+    this.trauma = Math.min(1.0, this.trauma + Math.max(0, val));
+  }
+
+  updateTrauma(delta) {
+    if (this.trauma <= 0) return;
+    this.trauma = Math.max(0, this.trauma - delta * 2.2);
+    const shake = this.trauma * this.trauma; // Non-linear response
+    const t = performance.now() * 0.04;
+
+    this.shakeRot.x = Math.sin(t * 1.3) * 0.035 * shake;
+    this.shakeRot.y = Math.cos(t * 1.7) * 0.03 * shake;
+    this.shakeRot.z = Math.sin(t * 0.9) * 0.02 * shake;
   }
 
   onResize(width, height) {
@@ -81,6 +104,13 @@ export class CameraManager {
 
   // Dual-Pass Render
   render(worldScene, vmScene = null, weaponType = 'SNIPER') {
+    // Apply camera trauma shake
+    if (this.trauma > 0) {
+      this.worldCamera.rotation.x += this.shakeRot.x;
+      this.worldCamera.rotation.y += this.shakeRot.y;
+      this.worldCamera.rotation.z += this.shakeRot.z;
+    }
+
     // Ensure world scene matrix is up to date
     this.worldCamera.updateMatrixWorld(true);
 
@@ -88,6 +118,14 @@ export class CameraManager {
     this.renderer.autoClear = false;
     this.renderer.clear();
     this.renderer.render(worldScene, this.worldCamera);
+
+    // Revert shake offset so controls stay strictly authoritative
+    if (this.trauma > 0) {
+      this.worldCamera.rotation.x -= this.shakeRot.x;
+      this.worldCamera.rotation.y -= this.shakeRot.y;
+      this.worldCamera.rotation.z -= this.shakeRot.z;
+      this.worldCamera.updateMatrixWorld(true);
+    }
 
     // For sniper when fully scoped in, skip viewmodel render pass so the rifle body never obstructs the scope aperture
     if (weaponType !== 'AR' && this.worldCamera.fov < 48) {

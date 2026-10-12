@@ -64,6 +64,8 @@ export class WeaponSystem {
     this.swayTarget = new THREE.Vector2(0, 0);
     this.swayCurrent = new THREE.Vector2(0, 0);
     this.bobTimer = 0;
+    this.strafeRoll = 0;
+    this.cameraManager = null;
 
     // Sights & Positions in Viewmodel space
     this.sniperRestPos = new THREE.Vector3(0.24, -0.22, -0.48);
@@ -85,6 +87,11 @@ export class WeaponSystem {
 
     this.knifeRestPos = new THREE.Vector3(0.26, -0.24, -0.42);
     this.knifeRestRot = new THREE.Euler(0.2, 0.4, -0.3);
+
+    // Dynamic Viewmodel Muzzle Flash Light (illuminates gun, receiver, and hands)
+    this.vmFlashLight = new THREE.PointLight(0xffeedd, 0, 2.0);
+    this.vmFlashLight.position.set(0.15, -0.05, -0.6);
+    this.vmScene.add(this.vmFlashLight);
 
     // Grenade Viewmodel Rest & Aim Positions
     this.grenadeRestPos = new THREE.Vector3(0.22, -0.22, -0.38);
@@ -147,6 +154,15 @@ export class WeaponSystem {
     if (this.currentSlot === 'SNIPER' || this.currentSlot === 'AR' || this.currentSlot === 'RPG') {
       this.equipSlot(type, true);
     }
+  }
+
+  setCameraManager(cameraManager) {
+    this.cameraManager = cameraManager;
+  }
+
+  // Adds smooth lateral banking tilt when strafing left/right
+  addStrafeTilt(dir) {
+    this.strafeRoll = THREE.MathUtils.clamp(this.strafeRoll + dir * 0.035, -0.065, 0.065);
   }
 
   // Equips weapon slot ('SNIPER', 'AR', 'RPG', 'KNIFE', or 'GRENADE')
@@ -293,9 +309,19 @@ export class WeaponSystem {
       this.rpgAmmo--;
       this.audio.playRPGLaunch();
 
-      // Recoil
+      // Recoil & Camera Trauma Shake
       this.recoilPitch = 0.22;
       this.recoilOffsetZ = 0.16;
+      if (this.cameraManager) this.cameraManager.addTrauma(0.5);
+
+      // Volumetric Muzzle Flash & Light
+      if (this.particles) {
+        this.particles.addMuzzleFlash(new THREE.Vector3(0.25, -0.16, -0.95), new THREE.Vector3(0, 0, -1), 1.6, 0xff7711);
+      }
+      if (this.vmFlashLight) {
+        this.vmFlashLight.color.setHex(0xff7711);
+        this.vmFlashLight.intensity = 5.0;
+      }
 
       // Hide warhead inside launcher viewmodel until reloaded
       if (this.rpgMesh && this.rpgMesh.userData && this.rpgMesh.userData.warhead) {
@@ -334,9 +360,19 @@ export class WeaponSystem {
       this.arFireCooldown = this.arFireRate;
       this.audio.playARRifleShot();
 
-      // Recoil
+      // Recoil & Camera Shake
       this.recoilPitch = this.isAiming ? 0.035 : 0.065;
       this.recoilOffsetZ = this.isAiming ? 0.022 : 0.04;
+      if (this.cameraManager) this.cameraManager.addTrauma(0.12);
+
+      // Volumetric Muzzle Flash & Dynamic Viewmodel Lighting
+      if (this.particles) {
+        this.particles.addMuzzleFlash(new THREE.Vector3(0.22, -0.16, -0.85), new THREE.Vector3(0, 0, -1), 0.75, 0xffcc33);
+      }
+      if (this.vmFlashLight) {
+        this.vmFlashLight.color.setHex(0xffdd66);
+        this.vmFlashLight.intensity = 3.6;
+      }
 
       // Eject shell casing
       if (this.arMesh) {
@@ -376,9 +412,19 @@ export class WeaponSystem {
     this.boltTimer = 0;
     this.audio.playBoltAction();
 
-    // Recoil kickback
+    // Recoil kickback & Camera Trauma Shake
     this.recoilPitch = 0.16; // Camera pitch kick
     this.recoilOffsetZ = 0.12; // Weapon push back
+    if (this.cameraManager) this.cameraManager.addTrauma(0.32);
+
+    // Volumetric Muzzle Flash & Dynamic Viewmodel Lighting
+    if (this.particles) {
+      this.particles.addMuzzleFlash(new THREE.Vector3(0.24, -0.18, -1.05), new THREE.Vector3(0, 0, -1), 1.25, 0xffaa22);
+    }
+    if (this.vmFlashLight) {
+      this.vmFlashLight.color.setHex(0xffaa33);
+      this.vmFlashLight.intensity = 5.5;
+    }
 
     // Eject shell casing from chamber after 0.45s
     setTimeout(() => {
@@ -504,9 +550,15 @@ export class WeaponSystem {
     const bobX = Math.cos(this.bobTimer * 0.5) * bobAmountX;
     const bobY = Math.abs(Math.sin(this.bobTimer)) * bobAmountY;
 
-    // 4. Recoil Recovery
+    // 4. Recoil Recovery & Strafe Roll Decay
     this.recoilPitch = THREE.MathUtils.damp(this.recoilPitch, 0, this.recoilRecoverySpeed, delta);
     this.recoilOffsetZ = THREE.MathUtils.damp(this.recoilOffsetZ, 0, 12.0, delta);
+    this.strafeRoll = THREE.MathUtils.damp(this.strafeRoll, 0, 8.0, delta);
+
+    // Dynamic Muzzle Flash Light Decay
+    if (this.vmFlashLight && this.vmFlashLight.intensity > 0) {
+      this.vmFlashLight.intensity = Math.max(0, this.vmFlashLight.intensity - delta * 45);
+    }
 
     // AR Fire rate cooldown
     if (this.arFireCooldown > 0) {
@@ -639,7 +691,7 @@ export class WeaponSystem {
       const targetRot = new THREE.Euler(
         THREE.MathUtils.lerp(this.rpgRestRot.x, this.rpgAimRot.x, this.adsProgress) - this.recoilPitch * 0.45,
         THREE.MathUtils.lerp(this.rpgRestRot.y, this.rpgAimRot.y, this.adsProgress) + this.swayCurrent.x * 2.0,
-        THREE.MathUtils.lerp(this.rpgRestRot.z, this.rpgAimRot.z, this.adsProgress)
+        THREE.MathUtils.lerp(this.rpgRestRot.z, this.rpgAimRot.z, this.adsProgress) + this.strafeRoll
       );
 
       if (this.isInspecting) {
@@ -669,7 +721,7 @@ export class WeaponSystem {
       const targetRot = new THREE.Euler(
         THREE.MathUtils.lerp(this.arRestRot.x, this.arAimRot.x, this.adsProgress) - this.recoilPitch * 0.5,
         THREE.MathUtils.lerp(this.arRestRot.y, this.arAimRot.y, this.adsProgress) + this.swayCurrent.x * 2.0,
-        THREE.MathUtils.lerp(this.arRestRot.z, this.arAimRot.z, this.adsProgress)
+        THREE.MathUtils.lerp(this.arRestRot.z, this.arAimRot.z, this.adsProgress) + this.strafeRoll
       );
 
       if (this.isInspecting) {
@@ -700,7 +752,7 @@ export class WeaponSystem {
       const targetRot = new THREE.Euler(
         THREE.MathUtils.lerp(this.sniperRestRot.x, this.sniperAimRot.x, this.adsProgress) - this.recoilPitch * 0.4,
         THREE.MathUtils.lerp(this.sniperRestRot.y, this.sniperAimRot.y, this.adsProgress) + this.swayCurrent.x * 2.0,
-        THREE.MathUtils.lerp(this.sniperRestRot.z, this.sniperAimRot.z, this.adsProgress)
+        THREE.MathUtils.lerp(this.sniperRestRot.z, this.sniperAimRot.z, this.adsProgress) + this.strafeRoll
       );
 
       // Inspect animation tilt
