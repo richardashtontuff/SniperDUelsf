@@ -1648,7 +1648,9 @@ export class GameEngine {
     }
 
     // 4. Remote Opponent (2-Player 1v1 Matches)
-    if (this.matchManager.isTwoPlayer && this.matchManager.state === 'ROUND_ACTIVE' && this.mpClient) {
+    // CRITICAL: ONLY the player who fired the rocket (!isRemote) evaluates damage on opponent.
+    // A remote spectator/target client must NEVER report damage back onto the launcher!
+    if (!isRemote && this.matchManager.isTwoPlayer && this.matchManager.state === 'ROUND_ACTIVE' && this.mpClient) {
       const oppId = this.matchManager.opponentId;
       if (oppId && this.mpClient.remotePlayers.has(oppId)) {
         const opp = this.mpClient.remotePlayers.get(oppId);
@@ -1656,7 +1658,7 @@ export class GameEngine {
         if (oppPos) {
           const { damage, impulse } = calculateRPGImpact(oppPos);
           if (damage > 0) {
-            this.mpClient.sendInflictDamage(oppId, damage, false, impulse);
+            this.mpClient.sendInflictDamage(oppId, damage, false, impulse, 'RPG', this.mpClient.myId);
             this.audio.playHitmarker(damage >= 75);
             this.matchManager.showHitmarker(damage >= 75);
             this.matchManager.showDamageNumber(damage, damage >= 75);
@@ -1680,6 +1682,9 @@ export class GameEngine {
     });
 
     // 6. Local Player: Guaranteed ZERO damage to the RPG launcher!
+    // If the local player fired this rocket (!isRemote), strictly 0 self-damage!
+    // If a remote rocket detonated (isRemote === true), the attacker's client authoritatively sends INFLICT_DAMAGE
+    // so we only apply physical launch impulse locally, never duplicate local damage!
     const pPos = this.controls.getPosition().clone().add(new THREE.Vector3(0, 0.9, 0));
     const { damage: pDmg, impulse: pImpulse } = calculateRPGImpact(pPos);
 
@@ -1690,10 +1695,9 @@ export class GameEngine {
         this.controls.applyImpulse(pImpulse);
       }
     } else {
-      // Opponent fired this rocket -> local player takes blast damage & impulse in active round
-      if (pDmg > 0 && this.matchManager.state === 'ROUND_ACTIVE') {
+      // Remote rocket: apply impulse locally; damage is handled authoritatively via server DAMAGE_TAKEN
+      if (pImpulse && pImpulse.lengthSq() > 0) {
         this.controls.applyImpulse(pImpulse);
-        this.matchManager.onPlayerDamaged(pDmg, false);
       }
     }
   }

@@ -181,7 +181,7 @@ export class MultiplayerClient {
     }));
   }
 
-  sendInflictDamage(targetId, damage, isHeadshot, impulse = null) {
+  sendInflictDamage(targetId, damage, isHeadshot, impulse = null, weaponType = 'BULLET', launcherId = null) {
     if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     if (!targetId || targetId === this.myId) return; // Prevent any self-damage reflection
     this.ws.send(JSON.stringify({
@@ -189,7 +189,9 @@ export class MultiplayerClient {
       targetId: targetId,
       damage: damage,
       isHeadshot: isHeadshot,
-      impulse: impulse ? { x: impulse.x, y: impulse.y, z: impulse.z } : null
+      impulse: impulse ? { x: impulse.x, y: impulse.y, z: impulse.z } : null,
+      weaponType: weaponType,
+      launcherId: launcherId || this.myId
     }));
   }
 

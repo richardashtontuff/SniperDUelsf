@@ -714,8 +714,15 @@ function handleClientMessage(senderId, data) {
       broadcastQueueStatus();
       break;
 
-    // Gunshot or knife slash
+    // Gunshot, knife slash, or rocket launch
     case 'FIRE_WEAPON':
+      if (player.matchId && activeMatches.has(player.matchId)) {
+        const match = activeMatches.get(player.matchId);
+        if (data.weaponType === 'RPG') {
+          match.lastRPGLauncherId = senderId;
+          match.lastRPGFireTime = Date.now();
+        }
+      }
       broadcastExcept(senderId, {
         type: 'REMOTE_FIRE',
         id: senderId,
@@ -733,6 +740,27 @@ function handleClientMessage(senderId, data) {
       if (!player.matchId) {
         console.log(`[Combat] Blocked damage from ${senderId}: players are in lobby.`);
         break;
+      }
+
+      // Block any self-damage attempt
+      if (data.targetId === senderId) {
+        console.log(`[Combat] Blocked self-damage attempt by ${senderId}`);
+        break;
+      }
+
+      // Block RPG damage if the target was the launcher
+      if (data.weaponType === 'RPG' && (data.launcherId === data.targetId || data.shooterId === data.targetId)) {
+        console.log(`[Combat] Blocked RPG self-damage for launcher ${data.targetId}`);
+        break;
+      }
+
+      // Authoritative RPG Launcher check: if this match recently fired an RPG from targetId, block damage to targetId
+      if (player.matchId && activeMatches.has(player.matchId)) {
+        const match = activeMatches.get(player.matchId);
+        if (data.weaponType === 'RPG' && match.lastRPGLauncherId === data.targetId && (Date.now() - (match.lastRPGFireTime || 0)) < 6000) {
+          console.log(`[Combat] Server blocked RPG damage on rocket launcher ${data.targetId}`);
+          break;
+        }
       }
 
       const target = clients.get(data.targetId);
