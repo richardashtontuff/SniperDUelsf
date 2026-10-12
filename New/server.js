@@ -569,6 +569,7 @@ function handleConnection(ws) {
   const playerObj = {
     id: playerId,
     ws: ws,
+    username: null,
     team: 'BLUE',
     health: 100,
     position: { x: 0, y: 0.55, z: -84 },
@@ -596,6 +597,7 @@ function handleConnection(ws) {
     type: 'PLAYER_JOINED',
     player: {
       id: playerId,
+      username: playerObj.username,
       position: playerObj.position,
       rotation: playerObj.rotation,
       slot: playerObj.slot
@@ -609,6 +611,7 @@ function handleConnection(ws) {
         type: 'PLAYER_JOINED',
         player: {
           id: other.id,
+          username: other.username,
           position: other.position,
           rotation: other.rotation,
           slot: other.slot
@@ -653,6 +656,8 @@ function handleConnection(ws) {
         opponent.ws.send(JSON.stringify({
           type: 'MATCH_OVER',
           winnerId: opponentId,
+          winnerUsername: opponent.username || opponentId,
+          loserUsername: playerObj.username || playerId,
           reason: 'OPPONENT_DISCONNECTED'
         }));
         opponent.matchId = null;
@@ -714,6 +719,19 @@ function handleClientMessage(senderId, data) {
       broadcastQueueStatus();
       break;
 
+    // Authenticated username registration
+    case 'SET_USERNAME':
+      if (data.username && typeof data.username === 'string') {
+        player.username = data.username.trim().slice(0, 25);
+        console.log(`[WS Auth] ${senderId} registered username: "${player.username}"`);
+        broadcast({
+          type: 'PLAYER_NAME_UPDATE',
+          id: senderId,
+          username: player.username
+        });
+      }
+      break;
+
     // Gunshot, knife slash, or rocket launch
     case 'FIRE_WEAPON':
       if (player.matchId && activeMatches.has(player.matchId)) {
@@ -766,15 +784,18 @@ function handleClientMessage(senderId, data) {
       const target = clients.get(data.targetId);
       if (target) {
         target.health = Math.max(0, target.health - data.damage);
-        console.log(`[Combat] ${senderId} dealt ${data.damage} dmg to ${data.targetId} (Remaining HP: ${target.health})`);
+        const weaponType = data.weaponType || 'SNIPER';
+        console.log(`[Combat] ${senderId} dealt ${data.damage} dmg to ${data.targetId} with ${weaponType} (Remaining HP: ${target.health})`);
 
         // Notify target of damage
         if (target.ws.readyState === target.ws.OPEN) {
           target.ws.send(JSON.stringify({
             type: 'DAMAGE_TAKEN',
             attackerId: senderId,
+            attackerUsername: player.username || senderId,
             damage: data.damage,
             isHeadshot: data.isHeadshot,
+            weaponType: weaponType,
             remainingHealth: target.health,
             impulse: data.impulse || null
           }));
@@ -785,8 +806,10 @@ function handleClientMessage(senderId, data) {
           player.ws.send(JSON.stringify({
             type: 'HIT_CONFIRMED',
             targetId: data.targetId,
+            targetUsername: target.username || data.targetId,
             damage: data.damage,
             isHeadshot: data.isHeadshot,
+            weaponType: weaponType,
             remainingHealth: target.health
           }));
         }
@@ -802,20 +825,28 @@ function handleClientMessage(senderId, data) {
             const redScore = match.scores[match.p2] || 0;
             const winnerScore = match.scores[senderId];
 
-            console.log(`[Combat] Fatal kill! ${senderId} won Round ${match.roundNumber}! Score: Blue ${blueScore} - Red ${redScore}`);
+            const p1Client = clients.get(match.p1);
+            const p2Client = clients.get(match.p2);
+            const winnerClient = clients.get(senderId);
+            const loserClient = clients.get(data.targetId);
+
+            const winnerUsername = (winnerClient && winnerClient.username) ? winnerClient.username : senderId;
+            const loserUsername = (loserClient && loserClient.username) ? loserClient.username : data.targetId;
+
+            console.log(`[Combat] Fatal kill! ${winnerUsername} (${senderId}) killed ${loserUsername} (${data.targetId}) with ${weaponType}! Won Round ${match.roundNumber}! Score: Blue ${blueScore} - Red ${redScore}`);
 
             // Check if player reached maxScore (e.g. 3 wins)
             if (winnerScore >= match.maxScore) {
-              console.log(`[Match] ${senderId} won the entire duel (${winnerScore} wins)!`);
-
-              const p1Client = clients.get(match.p1);
-              const p2Client = clients.get(match.p2);
+              console.log(`[Match] ${winnerUsername} won the entire duel (${winnerScore} wins)!`);
 
               if (p1Client && p1Client.ws.readyState === p1Client.ws.OPEN) {
                 p1Client.ws.send(JSON.stringify({
                   type: 'MATCH_OVER',
                   winnerId: senderId,
                   loserId: data.targetId,
+                  winnerUsername: winnerUsername,
+                  loserUsername: loserUsername,
+                  weaponType: weaponType,
                   isHeadshot: data.isHeadshot,
                   isWinner: (senderId === match.p1),
                   scores: { blue: blueScore, red: redScore }
@@ -829,6 +860,9 @@ function handleClientMessage(senderId, data) {
                   type: 'MATCH_OVER',
                   winnerId: senderId,
                   loserId: data.targetId,
+                  winnerUsername: winnerUsername,
+                  loserUsername: loserUsername,
+                  weaponType: weaponType,
                   isHeadshot: data.isHeadshot,
                   isWinner: (senderId === match.p2),
                   scores: { blue: blueScore, red: redScore }
@@ -847,14 +881,14 @@ function handleClientMessage(senderId, data) {
               player.health = 100;
               target.health = 100;
 
-              const p1Client = clients.get(match.p1);
-              const p2Client = clients.get(match.p2);
-
               if (p1Client && p1Client.ws.readyState === p1Client.ws.OPEN) {
                 p1Client.ws.send(JSON.stringify({
                   type: 'ROUND_OVER',
                   roundWinnerId: senderId,
                   roundLoserId: data.targetId,
+                  winnerUsername: winnerUsername,
+                  loserUsername: loserUsername,
+                  weaponType: weaponType,
                   isWinner: (senderId === match.p1),
                   isHeadshot: data.isHeadshot,
                   scores: { blue: blueScore, red: redScore },
@@ -868,6 +902,9 @@ function handleClientMessage(senderId, data) {
                   type: 'ROUND_OVER',
                   roundWinnerId: senderId,
                   roundLoserId: data.targetId,
+                  winnerUsername: winnerUsername,
+                  loserUsername: loserUsername,
+                  weaponType: weaponType,
                   isWinner: (senderId === match.p2),
                   isHeadshot: data.isHeadshot,
                   scores: { blue: blueScore, red: redScore },
@@ -878,11 +915,16 @@ function handleClientMessage(senderId, data) {
               }
             }
           } else {
+            const winnerUsername = (player && player.username) ? player.username : senderId;
+            const loserUsername = (target && target.username) ? target.username : data.targetId;
             if (player.ws.readyState === player.ws.OPEN) {
               player.ws.send(JSON.stringify({
                 type: 'MATCH_OVER',
                 winnerId: senderId,
                 loserId: data.targetId,
+                winnerUsername: winnerUsername,
+                loserUsername: loserUsername,
+                weaponType: weaponType,
                 isHeadshot: data.isHeadshot,
                 isWinner: true,
                 scores: { blue: 1, red: 0 }
@@ -893,6 +935,9 @@ function handleClientMessage(senderId, data) {
                 type: 'MATCH_OVER',
                 winnerId: senderId,
                 loserId: data.targetId,
+                winnerUsername: winnerUsername,
+                loserUsername: loserUsername,
+                weaponType: weaponType,
                 isHeadshot: data.isHeadshot,
                 isWinner: false,
                 scores: { blue: 1, red: 0 }
@@ -978,6 +1023,8 @@ function checkMatchmakingQueue() {
 
   const p1 = clients.get(p1Id);
   const p2 = clients.get(p2Id);
+  const p1Username = (p1 && p1.username) ? p1.username : p1Id;
+  const p2Username = (p2 && p2.username) ? p2.username : p2Id;
 
   if (p1 && p2 && p1.ws.readyState === p1.ws.OPEN && p2.ws.readyState === p2.ws.OPEN) {
     const matchId = `match_${Date.now()}`;
@@ -1005,12 +1052,14 @@ function checkMatchmakingQueue() {
     };
     activeMatches.set(matchId, matchData);
 
-    console.log(`[1v1 Match] Started 1v1 map vote: ${p1Id} (BLUE) vs ${p2Id} (RED) on Middle Platform!`);
+    console.log(`[1v1 Match] Started 1v1 map vote: ${p1Username} (BLUE) vs ${p2Username} (RED) on Middle Platform!`);
 
     const voteMsg1 = JSON.stringify({
       type: 'MAP_VOTE_START',
       matchId: matchId,
       opponentId: p2Id,
+      opponentUsername: p2Username,
+      myUsername: p1Username,
       myTeam: 'BLUE',
       opponentTeam: 'RED',
       duration: 10
@@ -1019,6 +1068,8 @@ function checkMatchmakingQueue() {
       type: 'MAP_VOTE_START',
       matchId: matchId,
       opponentId: p1Id,
+      opponentUsername: p1Username,
+      myUsername: p2Username,
       myTeam: 'RED',
       opponentTeam: 'BLUE',
       duration: 10
@@ -1073,11 +1124,15 @@ function resolveMapVote(match) {
 
   const p1 = clients.get(match.p1);
   const p2 = clients.get(match.p2);
+  const p1Username = (p1 && p1.username) ? p1.username : match.p1;
+  const p2Username = (p2 && p2.username) ? p2.username : match.p2;
 
   const startMsg1 = JSON.stringify({
     type: 'MATCH_START_2P',
     matchId: match.id,
     opponentId: match.p2,
+    opponentUsername: p2Username,
+    myUsername: p1Username,
     myTeam: 'BLUE',
     opponentTeam: 'RED',
     selectedMap: winningMap,
@@ -1090,6 +1145,8 @@ function resolveMapVote(match) {
     type: 'MATCH_START_2P',
     matchId: match.id,
     opponentId: match.p1,
+    opponentUsername: p1Username,
+    myUsername: p2Username,
     myTeam: 'RED',
     opponentTeam: 'BLUE',
     selectedMap: winningMap,

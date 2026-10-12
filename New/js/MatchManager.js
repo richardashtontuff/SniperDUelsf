@@ -190,9 +190,10 @@ export class MatchManager {
   }
 
   // Starts 2-Player Match triggered by WebSocket Server!
-  startTwoPlayerMatch(myTeam, opponentId, chosenMap = 'blockout', maxScore = 3) {
+  startTwoPlayerMatch(myTeam, opponentId, chosenMap = 'blockout', maxScore = 3, opponentUsername = null) {
     this.isTwoPlayer = true;
     this.opponentId = opponentId;
+    this.opponentUsername = opponentUsername || (this.mpClient ? this.mpClient.opponentUsername : null);
     this.myTeam = myTeam;
     this.activePad = null;
     this.isOnQueuePad = false;
@@ -351,8 +352,21 @@ export class MatchManager {
     }, 1500);
   }
 
+  getLocalPlayerName() {
+    return (typeof window !== 'undefined' && window.__currentUser) ? window.__currentUser : 'YOU';
+  }
+
+  getOpponentPlayerName() {
+    if (this.isTwoPlayer) {
+      if (this.opponentUsername) return this.opponentUsername;
+      if (this.mpClient && this.mpClient.opponentUsername) return this.mpClient.opponentUsername;
+      return 'OPPONENT';
+    }
+    return 'BOT_ALPHA';
+  }
+
   // When player inflicts damage on Bot
-  onBotDamaged(damage, isHeadshot) {
+  onBotDamaged(damage, isHeadshot, weaponType = 'SNIPER') {
     if (this.state !== 'ROUND_ACTIVE') return;
 
     this.audio.playHitmarker(isHeadshot);
@@ -361,13 +375,14 @@ export class MatchManager {
 
     const isFatal = this.bot.takeDamage(damage, isHeadshot);
     if (isFatal) {
-      this.onBotKilled(isHeadshot);
+      this.onBotKilled(isHeadshot, weaponType);
     }
   }
 
   // When Bot dies: Player wins the round
-  onBotKilled(isHeadshot) {
-    this.addKillFeedEntry('YOU', 'BOT_ALPHA', isHeadshot);
+  onBotKilled(isHeadshot, weaponType = 'SNIPER') {
+    const killer = this.getLocalPlayerName();
+    this.addKillFeedEntry(killer, 'BOT_ALPHA', isHeadshot, weaponType);
     this.scorePlayer++;
     this.updateHUDScore();
     this.audio.playRoundWon();
@@ -390,7 +405,7 @@ export class MatchManager {
   }
 
   // When Player takes damage (from Bot or Remote Player)
-  onPlayerDamaged(damage, isHeadshot) {
+  onPlayerDamaged(damage, isHeadshot, weaponType = 'SNIPER') {
     if (this.state !== 'ROUND_ACTIVE' || !this.isPlayerAlive) return;
 
     this.playerHealth -= damage;
@@ -401,14 +416,15 @@ export class MatchManager {
       this.isPlayerAlive = false;
       this.playerHealth = 0;
       this.updateHUDHealth();
-      this.onPlayerKilled(isHeadshot);
+      this.onPlayerKilled(isHeadshot, weaponType);
     }
   }
 
   // When Player dies: Opponent wins the round
-  onPlayerKilled(isHeadshot) {
-    const killer = this.isTwoPlayer ? 'OPPONENT' : 'BOT_ALPHA';
-    this.addKillFeedEntry(killer, 'YOU', isHeadshot);
+  onPlayerKilled(isHeadshot, weaponType = 'SNIPER') {
+    const killer = this.isTwoPlayer ? this.getOpponentPlayerName() : 'BOT_ALPHA';
+    const victim = this.getLocalPlayerName();
+    this.addKillFeedEntry(killer, victim, isHeadshot, weaponType);
 
     // Fall over and unequip scope / reload
     if (!this.isTwoPlayer) {
@@ -441,9 +457,13 @@ export class MatchManager {
     this.scoreBot = msg.scores.red;
     this.updateHUDScore();
 
-    const killer = isMeWinner ? 'YOU' : 'OPPONENT';
-    const victim = isMeWinner ? 'OPPONENT' : 'YOU';
-    this.addKillFeedEntry(killer, victim, msg.isHeadshot);
+    const myName = this.getLocalPlayerName();
+    const oppName = msg.opponentUsername || this.getOpponentPlayerName();
+    const killer = isMeWinner ? (msg.winnerUsername || myName) : (msg.winnerUsername || oppName);
+    const victim = isMeWinner ? (msg.loserUsername || oppName) : (msg.loserUsername || myName);
+    const weaponType = msg.weaponType || 'SNIPER';
+
+    this.addKillFeedEntry(killer, victim, msg.isHeadshot, weaponType);
 
     if (isMeWinner) {
       this.audio.playRoundWon();
@@ -482,25 +502,32 @@ export class MatchManager {
 
     const resText = isMeWinner ? 'ROUND WON!' : 'ROUND LOST!';
     const resCol = isMeWinner ? '#00ffcc' : '#ff4444';
-    this.updateStateBanner(`${resText} (BLUE ${this.scorePlayer} - RED ${this.scoreBot}) • NEXT ROUND IN 3...`, true, resCol);
+    this.updateStateBanner(`${resText} • ${killer.toUpperCase()} DEFEATED ${victim.toUpperCase()} (${this.scorePlayer} - ${this.scoreBot})`, true, resCol);
   }
 
   // Final Victory / Defeat Screen -> Ends Match & Returns to Lobby
-  triggerMatchVictory(winner) {
+  triggerMatchVictory(winner, winnerUsername = null, loserUsername = null) {
     this.state = 'MATCH_VICTORY';
     this.stateTimer = 3.5;
 
+    const myName = this.getLocalPlayerName();
+    const oppName = this.getOpponentPlayerName();
+
     if (winner === 'PLAYER' || winner === 'YOU') {
-      this.updateStateBanner(`VICTORY! YOU WON THE DUEL (${this.scorePlayer} - ${this.scoreBot}) (+300 COINS)`, true, '#f1c40f');
+      const killer = winnerUsername || myName;
+      const victim = loserUsername || oppName;
+      this.updateStateBanner(`VICTORY! ${killer.toUpperCase()} DEFEATED ${victim.toUpperCase()} (${this.scorePlayer} - ${this.scoreBot}) (+300 COINS)`, true, '#f1c40f');
       this.caseSystem.addCoins(300);
       this.audio.playUnlockFanfare('legendary');
       this.particles.spawnVictoryConfetti(this.controls.getPosition());
     } else if (winner === 'OPPONENT_QUIT') {
-      this.updateStateBanner('OPPONENT DISCONNECTED - YOU WIN (+150 COINS)', true, '#f1c40f');
+      this.updateStateBanner(`OPPONENT DISCONNECTED - ${myName.toUpperCase()} WINS (+150 COINS)`, true, '#f1c40f');
       this.caseSystem.addCoins(150);
       this.audio.playUnlockFanfare('rare');
     } else {
-      this.updateStateBanner(`DEFEAT! OPPONENT WON THE DUEL (${this.scoreBot} - ${this.scorePlayer})`, true, '#ff4444');
+      const killer = winnerUsername || oppName;
+      const victim = loserUsername || myName;
+      this.updateStateBanner(`DEFEAT! ${killer.toUpperCase()} DEFEATED ${victim.toUpperCase()} (${this.scoreBot} - ${this.scorePlayer})`, true, '#ff4444');
       this.audio.playRoundLost();
     }
   }
@@ -509,6 +536,7 @@ export class MatchManager {
     this.state = 'LOBBY';
     this.isTwoPlayer = false;
     this.opponentId = null;
+    this.opponentUsername = null;
     this.activePad = null;
     this.isOnQueuePad = false;
     this.controls.resetFromDeath();
@@ -568,14 +596,28 @@ export class MatchManager {
     }, 300);
   }
 
-  addKillFeedEntry(killer, victim, isHeadshot) {
+  addKillFeedEntry(killer, victim, isHeadshot, weaponType = 'SNIPER') {
     const feed = document.getElementById('kill-feed');
     if (!feed) return;
     const entry = document.createElement('div');
     entry.className = 'kill-feed-entry';
+
+    let weaponBadge = '💥 [AWP]';
+    if (weaponType === 'SNIPER') {
+      weaponBadge = isHeadshot ? '🎯 [AWP HEADSHOT]' : '💥 [AWP]';
+    } else if (weaponType === 'AR') {
+      weaponBadge = isHeadshot ? '⚡ [M4A1 HEADSHOT]' : '🔫 [M4A1]';
+    } else if (weaponType === 'RPG') {
+      weaponBadge = '🚀 [RPG-7 ROCKET]';
+    } else if (weaponType === 'KNIFE') {
+      weaponBadge = '🗡️ [TACTICAL KNIFE]';
+    } else if (weaponType === 'GRENADE') {
+      weaponBadge = '💣 [FRAG GRENADE]';
+    }
+
     entry.innerHTML = `
       <span class="killer">${killer}</span>
-      <span class="weapon-icon">${isHeadshot ? '🎯 [AWP HEADSHOT]' : '💥 [AWP]'}</span>
+      <span class="weapon-icon">${weaponBadge}</span>
       <span class="victim">${victim}</span>
     `;
     feed.appendChild(entry);
@@ -644,7 +686,7 @@ export class MatchManager {
       // Update AI bot only in Solo Bot mode
       if (!this.isTwoPlayer && this.bot.isAlive) {
         this.bot.update(delta, playerPos, this.state, (dmg, isHead) => {
-          this.onPlayerDamaged(dmg, isHead);
+          this.onPlayerDamaged(dmg, isHead, 'SNIPER');
         });
       }
     }

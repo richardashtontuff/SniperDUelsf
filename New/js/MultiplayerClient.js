@@ -8,8 +8,10 @@ export class MultiplayerClient {
     this.ws = null;
     this.isConnected = false;
     this.localPlayerId = null;
+    this.username = (typeof window !== 'undefined' && window.__currentUser) ? window.__currentUser : null;
+    this.opponentUsername = null;
     this.localTeam = 'BLUE';
-    this.remotePlayers = new Map(); // id -> { id, group, head, torso, leftArm, rightArm, leftLeg, rightLeg, heldWeapon, targetPos, targetRot }
+    this.remotePlayers = new Map(); // id -> { id, group, head, torso, leftArm, rightArm, leftLeg, rightLeg, heldWeapon, targetPos, targetRot, username }
     this.currentMatchId = null;
     this.currentOpponentId = null;
     this.isTwoPlayerMatch = false;
@@ -22,6 +24,16 @@ export class MultiplayerClient {
 
   get myId() {
     return this.localPlayerId;
+  }
+
+  setUsername(username) {
+    this.username = username || null;
+    if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN && this.username) {
+      this.ws.send(JSON.stringify({
+        type: 'SET_USERNAME',
+        username: this.username
+      }));
+    }
   }
 
   initVoteUI() {
@@ -105,6 +117,9 @@ export class MultiplayerClient {
       this.ws.onopen = () => {
         this.isConnected = true;
         console.log('[MultiplayerClient] Connected to WebSocket Game Server!');
+        if (this.username || (typeof window !== 'undefined' && window.__currentUser)) {
+          this.setUsername(this.username || window.__currentUser);
+        }
         this.startTransformSync();
         this.updateHUDOnlineStatus(true);
       };
@@ -216,6 +231,7 @@ export class MultiplayerClient {
 
     this.remotePlayers.set(pInfo.id, {
       id: pInfo.id,
+      username: pInfo.username || null,
       group: model,
       head: model.userData.head,
       torso: model.userData.torso,
@@ -242,6 +258,9 @@ export class MultiplayerClient {
       case 'INIT':
         this.localPlayerId = msg.playerId;
         console.log(`[Multiplayer] Assigned ID: ${this.localPlayerId}`);
+        if (this.username || (typeof window !== 'undefined' && window.__currentUser)) {
+          this.setUsername(this.username || window.__currentUser);
+        }
         const initOnline = document.getElementById('online-count');
         const initQueue = document.getElementById('queue-count');
         if (initOnline && msg.playerCount) initOnline.textContent = msg.playerCount;
@@ -258,6 +277,18 @@ export class MultiplayerClient {
       case 'PLAYER_JOINED':
         if (msg.player.id !== this.localPlayerId) {
           this.createRemotePlayer(msg.player);
+        }
+        break;
+
+      case 'PLAYER_NAME_UPDATE':
+        if (msg.id === this.currentOpponentId) {
+          this.opponentUsername = msg.username;
+          if (this.game.matchManager) {
+            this.game.matchManager.opponentUsername = msg.username;
+          }
+        }
+        if (this.remotePlayers.has(msg.id)) {
+          this.remotePlayers.get(msg.id).username = msg.username;
         }
         break;
 
@@ -310,9 +341,13 @@ export class MultiplayerClient {
       case 'MAP_VOTE_START':
         this.currentMatchId = msg.matchId;
         this.currentOpponentId = msg.opponentId;
+        this.opponentUsername = msg.opponentUsername || msg.opponentId;
         this.myTeam = msg.myTeam;
         this.opponentTeam = msg.opponentTeam;
-        console.log(`[Multiplayer] Map vote started for match ${this.currentMatchId}`);
+        if (this.game.matchManager) {
+          this.game.matchManager.opponentUsername = this.opponentUsername;
+        }
+        console.log(`[Multiplayer] Map vote started for match ${this.currentMatchId} vs ${this.opponentUsername}`);
         this.showMapVoting(msg.duration || 10);
         break;
 
@@ -326,10 +361,14 @@ export class MultiplayerClient {
         break;
 
       case 'MATCH_START_2P':
-        console.log(`[Matchmaking] 2-Player Match starting against ${msg.opponentId}! Team: ${msg.myTeam}, Arena: ${msg.selectedMap}`);
         this.currentMatchId = msg.matchId;
         this.currentOpponentId = msg.opponentId;
+        this.opponentUsername = msg.opponentUsername || msg.opponentId;
         this.isTwoPlayerMatch = true;
+        if (this.game.matchManager) {
+          this.game.matchManager.opponentUsername = this.opponentUsername;
+        }
+        console.log(`[Matchmaking] 2-Player Match starting against ${this.opponentUsername}! Team: ${msg.myTeam}, Arena: ${msg.selectedMap}`);
 
         if (this.voteInterval) {
           clearInterval(this.voteInterval);
@@ -358,13 +397,14 @@ export class MultiplayerClient {
           if (!this.remotePlayers.has(msg.opponentId)) {
             this.createRemotePlayer({
               id: msg.opponentId,
+              username: this.opponentUsername,
               team: msg.opponentTeam,
               position: { x: 0, y: 2.55, z: (msg.opponentTeam === 'RED' ? -25 : 55) }
             });
           }
 
           // Delegate to match manager to start 2-player duel!
-          this.game.matchManager.startTwoPlayerMatch(msg.myTeam, msg.opponentId, chosenMap, msg.maxScore);
+          this.game.matchManager.startTwoPlayerMatch(msg.myTeam, msg.opponentId, chosenMap, msg.maxScore, this.opponentUsername);
         }, 1200);
         break;
 
@@ -391,7 +431,7 @@ export class MultiplayerClient {
 
       case 'DAMAGE_TAKEN':
         // Local player took damage from opponent
-        this.game.matchManager.onPlayerDamaged(msg.damage, msg.isHeadshot);
+        this.game.matchManager.onPlayerDamaged(msg.damage, msg.isHeadshot, msg.weaponType || 'SNIPER');
         if (msg.impulse && this.game.controls && this.game.controls.applyImpulse) {
           this.game.controls.applyImpulse(new THREE.Vector3(msg.impulse.x, msg.impulse.y, msg.impulse.z));
         }
@@ -428,11 +468,11 @@ export class MultiplayerClient {
         }
 
         if (msg.reason === 'OPPONENT_DISCONNECTED') {
-          this.game.matchManager.triggerMatchVictory('OPPONENT_QUIT');
+          this.game.matchManager.triggerMatchVictory('OPPONENT_QUIT', msg.winnerUsername, msg.loserUsername);
         } else if (msg.isWinner) {
-          this.game.matchManager.triggerMatchVictory('YOU');
+          this.game.matchManager.triggerMatchVictory('YOU', msg.winnerUsername, msg.loserUsername);
         } else {
-          this.game.matchManager.triggerMatchVictory('OPPONENT');
+          this.game.matchManager.triggerMatchVictory('OPPONENT', msg.winnerUsername, msg.loserUsername);
         }
         break;
     }

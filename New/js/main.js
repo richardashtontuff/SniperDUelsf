@@ -656,6 +656,10 @@ export class GameEngine {
       this.currentUser = user;
       window.__currentUser = user;
 
+      if (this.mpClient && typeof this.mpClient.setUsername === 'function') {
+        this.mpClient.setUsername(user);
+      }
+
       if (user) {
         if (widgetText) widgetText.textContent = `👤 ${user.toUpperCase()}`;
         if (widgetBtn) widgetBtn.classList.add('logged-in');
@@ -982,7 +986,7 @@ export class GameEngine {
           const isHeadshot = hitObj.userData.isHeadshot === true;
           const damage = shootResult.type === 'AR' ? 5 : (isHeadshot ? 150 : 92);
           this.particles.addImpact(hitPoint, hit.face ? hit.face.normal : new THREE.Vector3(0, 1, 0), 0xff3300, 14);
-          this.mpClient.sendInflictDamage(hitObj.userData.playerId, damage, isHeadshot);
+          this.mpClient.sendInflictDamage(hitObj.userData.playerId, damage, isHeadshot, null, shootResult.type, this.mpClient.myId);
         }
         return;
       }
@@ -993,7 +997,7 @@ export class GameEngine {
           const isHeadshot = hitObj.userData.isHeadshot === true;
           const damage = shootResult.type === 'AR' ? 5 : (isHeadshot ? 150 : 92);
           this.particles.addImpact(hitPoint, hit.face ? hit.face.normal : new THREE.Vector3(0, 1, 0), 0xff3300, 14);
-          this.matchManager.onBotDamaged(damage, isHeadshot);
+          this.matchManager.onBotDamaged(damage, isHeadshot, shootResult.type);
         }
         return;
       }
@@ -1064,9 +1068,9 @@ export class GameEngine {
 
       if (this.matchManager.state === 'ROUND_ACTIVE') {
         if (hit.object.userData.isRemotePlayer) {
-          this.mpClient.sendInflictDamage(hit.object.userData.playerId, damage, isHeadshot);
+          this.mpClient.sendInflictDamage(hit.object.userData.playerId, damage, isHeadshot, null, 'KNIFE', this.mpClient.myId);
         } else {
-          this.matchManager.onBotDamaged(damage, isHeadshot);
+          this.matchManager.onBotDamaged(damage, isHeadshot, 'KNIFE');
         }
         this.particles.addImpact(hit.point, new THREE.Vector3(0, 1, 0), 0xff0044, 12);
       }
@@ -1346,11 +1350,7 @@ export class GameEngine {
       const bDist = this.bot.position.distanceTo(pos);
       if (bDist <= 8.0) {
         const damage = calculateDamage(bDist);
-        this.bot.takeDamage(damage);
-        const isLethal = damage >= 100 || !this.bot.isAlive;
-        this.audio.playHitmarker(isLethal);
-        this.matchManager.showHitmarker(isLethal);
-        this.matchManager.showDamageNumber(damage, isLethal);
+        this.matchManager.onBotDamaged(damage, false, 'GRENADE');
       }
     }
 
@@ -1379,7 +1379,7 @@ export class GameEngine {
           const oppDist = oppPos.distanceTo(pos);
           if (oppDist <= 8.0) {
             const damage = calculateDamage(oppDist);
-            this.mpClient.sendInflictDamage(oppId, damage, false);
+            this.mpClient.sendInflictDamage(oppId, damage, false, null, 'GRENADE', this.mpClient.myId);
             this.audio.playHitmarker(damage >= 100);
             this.matchManager.showHitmarker(damage >= 100);
             this.matchManager.showDamageNumber(damage, damage >= 100);
@@ -1625,12 +1625,8 @@ export class GameEngine {
       const bPos = this.bot.position.clone().add(new THREE.Vector3(0, 0.9, 0));
       const { damage, impulse } = calculateRPGImpact(bPos);
       if (damage > 0) {
-        this.bot.takeDamage(damage);
+        this.matchManager.onBotDamaged(damage, false, 'RPG');
         this.bot.applyImpulse(impulse);
-        const isLethal = !this.bot.isAlive;
-        this.audio.playHitmarker(isLethal);
-        this.matchManager.showHitmarker(isLethal);
-        this.matchManager.showDamageNumber(damage, isLethal);
       }
     }
 
