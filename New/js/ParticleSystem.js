@@ -30,6 +30,18 @@ export class ParticleSystem {
     this.unitCylinderGeo.rotateX(Math.PI / 2);
     this.unitTipGeo = new THREE.SphereGeometry(1, 8, 8);
 
+    // Reusable Geometries & Materials for RPG Rocket Exhaust & Explosions (Prevents stutter)
+    this.unitRocketSmokeGeo = new THREE.SphereGeometry(1, 6, 5);
+    this.rocketSmokeMat = new THREE.MeshBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending });
+    this.rocketFireMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending });
+
+    this.unitShockwaveGeo = new THREE.RingGeometry(0.2, 0.45, 18);
+    this.unitShockwaveGeo.rotateX(-Math.PI / 2);
+    this.unitFireballGeo = new THREE.SphereGeometry(1, 8, 6);
+    this.unitExplosionSmokeGeo = new THREE.DodecahedronGeometry(1, 0);
+    this.explosionSmokeMat = new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.65 });
+    this.explosionSparkMat = new THREE.PointsMaterial({ color: 0xffaa22, size: 0.18, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending });
+
     // Muzzle Flash Point Light (reused for performance)
     this.flashLight = new THREE.PointLight(0xffaa33, 0, 14);
     this.scene.add(this.flashLight);
@@ -266,34 +278,26 @@ export class ParticleSystem {
     });
   }
 
-  // RPG Rocket exhaust smoke puffs & fiery trail
+  // RPG Rocket exhaust smoke puffs & fiery trail (Reuses shared unit geometry and materials)
   addRocketSmoke(pos) {
-    const smokeGeo = new THREE.SphereGeometry(0.16 + Math.random() * 0.08, 6, 6);
-    const smokeMat = new THREE.MeshBasicMaterial({
-      color: Math.random() > 0.4 ? 0xd0d0d0 : 0xff7711,
-      transparent: true,
-      opacity: 0.85,
-      blending: THREE.AdditiveBlending
-    });
-    const smokeMesh = new THREE.Mesh(smokeGeo, smokeMat);
+    const isFire = Math.random() < 0.45;
+    const smokeMesh = new THREE.Mesh(this.unitRocketSmokeGeo, isFire ? this.rocketFireMat : this.rocketSmokeMat);
     smokeMesh.position.copy(pos);
+    const s = 0.16 + Math.random() * 0.09;
+    smokeMesh.scale.set(s, s, s);
     this.scene.add(smokeMesh);
     this.sparks.push({
       mesh: smokeMesh,
-      vel: new THREE.Vector3((Math.random() - 0.5) * 0.8, Math.random() * 0.8 + 0.2, (Math.random() - 0.5) * 0.8),
-      life: 0.35,
-      maxLife: 0.35
+      vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, Math.random() * 0.6 + 0.2, (Math.random() - 0.5) * 0.6),
+      life: 0.30,
+      maxLife: 0.30,
+      sharedMat: true
     });
   }
 
-  // Tactical Grenade High-Explosive Detonation FX (Shockwave, fiery fireballs, smoke & debris)
+  // Tactical Grenade High-Explosive & RPG Detonation FX (High-performance pooled particles)
   addExplosion(center) {
-    const explosionGroup = new THREE.Group();
-    explosionGroup.position.copy(center);
-
     // 1. Expanding Ground Shockwave Ring
-    const ringGeo = new THREE.RingGeometry(0.2, 0.45, 24);
-    ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xffaa33,
       side: THREE.DoubleSide,
@@ -301,7 +305,7 @@ export class ParticleSystem {
       opacity: 0.95,
       blending: THREE.AdditiveBlending
     });
-    const shockwaveMesh = new THREE.Mesh(ringGeo, ringMat);
+    const shockwaveMesh = new THREE.Mesh(this.unitShockwaveGeo, ringMat);
     shockwaveMesh.position.copy(center);
     shockwaveMesh.position.y += 0.05;
     this.scene.add(shockwaveMesh);
@@ -313,26 +317,20 @@ export class ParticleSystem {
       opacity: 1.0,
       blending: THREE.AdditiveBlending
     });
-    const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10), flashMat);
+    const flashMesh = new THREE.Mesh(this.unitFireballGeo, flashMat);
     flashMesh.position.copy(center);
+    flashMesh.scale.set(0.65, 0.65, 0.65);
     this.scene.add(flashMesh);
 
-    // 3. Fiery Explosion Sparks & Shrapnel
+    // 3. Fiery Explosion Sparks & Shrapnel (Optimized from 36 down to 14 lightweight points)
     const sparkItems = [];
-    for (let i = 0; i < 36; i++) {
-      const pMat = new THREE.PointsMaterial({
-        color: [0xff3300, 0xff7700, 0xffcc00, 0xffffff][Math.floor(Math.random() * 4)],
-        size: 0.14 + Math.random() * 0.12,
-        transparent: true,
-        opacity: 1.0,
-        blending: THREE.AdditiveBlending
-      });
-      const spark = new THREE.Points(this.sparkGeo.clone(), pMat);
+    for (let i = 0; i < 14; i++) {
+      const spark = new THREE.Points(this.sparkGeo, this.explosionSparkMat);
       spark.position.copy(center);
 
       const phi = Math.random() * Math.PI * 2;
       const theta = Math.random() * Math.PI * 0.5; // Upward hemisphere
-      const speed = 7.0 + Math.random() * 14.0;
+      const speed = 8.0 + Math.random() * 12.0;
       const vel = new THREE.Vector3(
         Math.cos(phi) * Math.sin(theta) * speed,
         Math.cos(theta) * speed + 3.0,
@@ -343,39 +341,35 @@ export class ParticleSystem {
       sparkItems.push({
         mesh: spark,
         vel: vel,
-        life: 0.45 + Math.random() * 0.35,
-        maxLife: 0.8
+        life: 0.40 + Math.random() * 0.25,
+        maxLife: 0.65
       });
     }
 
-    // 4. Billowing Smoke Puffs
+    // 4. Billowing Smoke Puffs (Optimized from 12 down to 5, using lightweight basic material)
     const smokeItems = [];
-    for (let i = 0; i < 12; i++) {
-      const sMat = new THREE.MeshStandardMaterial({
-        color: 0x222222,
-        roughness: 0.9,
-        transparent: true,
-        opacity: 0.7
-      });
-      const smokeMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.3, 1), sMat);
+    for (let i = 0; i < 5; i++) {
+      const smokeMesh = new THREE.Mesh(this.unitExplosionSmokeGeo, this.explosionSmokeMat);
       smokeMesh.position.copy(center).add(new THREE.Vector3(
-        (Math.random() - 0.5) * 0.6,
-        Math.random() * 0.5,
-        (Math.random() - 0.5) * 0.6
+        (Math.random() - 0.5) * 0.5,
+        Math.random() * 0.4,
+        (Math.random() - 0.5) * 0.5
       ));
+      const s = 0.35 + Math.random() * 0.25;
+      smokeMesh.scale.set(s, s, s);
       this.scene.add(smokeMesh);
 
       smokeItems.push({
         mesh: smokeMesh,
         vel: new THREE.Vector3(
-          (Math.random() - 0.5) * 2.5,
-          1.5 + Math.random() * 2.5,
-          (Math.random() - 0.5) * 2.5
+          (Math.random() - 0.5) * 2.2,
+          1.5 + Math.random() * 2.0,
+          (Math.random() - 0.5) * 2.2
         ),
         rotVel: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
-        life: 0.9 + Math.random() * 0.5,
-        maxLife: 1.4,
-        baseScale: 1.0
+        life: 0.8 + Math.random() * 0.4,
+        maxLife: 1.2,
+        baseScale: s
       });
     }
 
@@ -384,8 +378,8 @@ export class ParticleSystem {
       flash: flashMesh,
       sparks: sparkItems,
       smoke: smokeItems,
-      life: 1.5,
-      maxLife: 1.5
+      life: 1.2,
+      maxLife: 1.2
     });
   }
 
@@ -446,17 +440,24 @@ export class ParticleSystem {
       }
     }
 
-    // 2. Update sparks
+    // 2. Update sparks & rocket exhaust puffs
     for (let i = this.sparks.length - 1; i >= 0; i--) {
       const s = this.sparks[i];
       s.life -= delta;
       s.mesh.position.addScaledVector(s.vel, delta);
-      s.vel.y -= 9.8 * delta; // Gravity
-      s.mesh.material.opacity = Math.max(0, s.life / s.maxLife);
+      s.vel.y -= (s.sharedMat ? 0.6 : 9.8) * delta;
+      if (!s.sharedMat && s.mesh.material) {
+        s.mesh.material.opacity = Math.max(0, s.life / s.maxLife);
+      } else if (s.sharedMat) {
+        const sc = s.mesh.scale.x * (1.0 + delta * 1.5);
+        s.mesh.scale.set(sc, sc, sc);
+      }
 
       if (s.life <= 0) {
         this.scene.remove(s.mesh);
-        s.mesh.material.dispose();
+        if (!s.sharedMat && s.mesh.material) {
+          s.mesh.material.dispose();
+        }
         this.sparks.splice(i, 1);
       }
     }
@@ -538,11 +539,9 @@ export class ParticleSystem {
         const sp = exp.sparks[j];
         sp.life -= delta;
         sp.mesh.position.addScaledVector(sp.vel, delta);
-        sp.vel.y -= 15.0 * delta; // Gravity
-        sp.mesh.material.opacity = Math.max(0, sp.life / sp.maxLife);
+        sp.vel.y -= 14.0 * delta; // Gravity
         if (sp.life <= 0) {
           this.scene.remove(sp.mesh);
-          sp.mesh.material.dispose();
           exp.sparks.splice(j, 1);
         }
       }
@@ -555,13 +554,10 @@ export class ParticleSystem {
         sm.mesh.rotation.x += sm.rotVel.x * delta;
         sm.mesh.rotation.y += sm.rotVel.y * delta;
         const smProg = 1.0 - (sm.life / sm.maxLife);
-        const smScale = 1.0 + smProg * 2.5;
+        const smScale = sm.baseScale * (1.0 + smProg * 2.2);
         sm.mesh.scale.set(smScale, smScale, smScale);
-        sm.mesh.material.opacity = Math.max(0, (sm.life / sm.maxLife) * 0.65);
         if (sm.life <= 0) {
           this.scene.remove(sm.mesh);
-          sm.mesh.geometry.dispose();
-          sm.mesh.material.dispose();
           exp.smoke.splice(k, 1);
         }
       }

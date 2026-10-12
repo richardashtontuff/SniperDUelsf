@@ -183,6 +183,7 @@ export class MultiplayerClient {
 
   sendInflictDamage(targetId, damage, isHeadshot, impulse = null) {
     if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!targetId || targetId === this.myId) return; // Prevent any self-damage reflection
     this.ws.send(JSON.stringify({
       type: 'INFLICT_DAMAGE',
       targetId: targetId,

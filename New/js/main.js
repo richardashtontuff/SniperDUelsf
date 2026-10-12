@@ -1441,7 +1441,8 @@ export class GameEngine {
     rocketMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), forward);
     rocketMesh.scale.set(1.4, 1.4, 1.4);
 
-    const rocketLight = new THREE.PointLight(0xff6600, 3.5, 9);
+    const rocketLight = new THREE.PointLight(0xff6600, 1.8, 6);
+    rocketLight.castShadow = false;
     rocketLight.position.set(0, 0, 0.35);
     rocketMesh.add(rocketLight);
 
@@ -1469,7 +1470,8 @@ export class GameEngine {
     rocketMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), forward);
     rocketMesh.scale.set(1.4, 1.4, 1.4);
 
-    const rocketLight = new THREE.PointLight(0xff6600, 3.5, 9);
+    const rocketLight = new THREE.PointLight(0xff6600, 1.8, 6);
+    rocketLight.castShadow = false;
     rocketLight.position.set(0, 0, 0.35);
     rocketMesh.add(rocketLight);
 
@@ -1526,9 +1528,9 @@ export class GameEngine {
       const step = r.velocity.clone().multiplyScalar(delta);
       const stepDist = step.length();
 
-      // Emit rocket smoke & fire trail
+      // Emit rocket smoke & fire trail (Throttled to 20Hz for butter-smooth framerate)
       r.trailTimer += delta;
-      if (r.trailTimer >= 0.016) {
+      if (r.trailTimer >= 0.045) {
         this.particles.addRocketSmoke(r.position);
         r.trailTimer = 0;
       }
@@ -1677,19 +1679,21 @@ export class GameEngine {
       }
     });
 
-    // 6. Local Player: Rocket Jump Launch ONLY (NO self-damage to the shooter!)
+    // 6. Local Player: Guaranteed ZERO damage to the RPG launcher!
     const pPos = this.controls.getPosition().clone().add(new THREE.Vector3(0, 0.9, 0));
     const { damage: pDmg, impulse: pImpulse } = calculateRPGImpact(pPos);
-    if (pDmg > 0) {
-      if (isRemote) {
-        // Rocket was fired by opponent -> local player takes damage & launch impulse
+
+    if (!isRemote) {
+      // Local player fired this rocket -> strictly 0 self-damage!
+      // Provides vertical/horizontal rocket jump propulsion only:
+      if (pImpulse && pImpulse.lengthSq() > 0) {
         this.controls.applyImpulse(pImpulse);
-        if (this.matchManager.state === 'ROUND_ACTIVE') {
-          this.matchManager.onPlayerDamaged(pDmg, false);
-        }
-      } else {
-        // Rocket was fired by local player -> NO self-damage, but provides launch impulse for rocket jumping!
+      }
+    } else {
+      // Opponent fired this rocket -> local player takes blast damage & impulse in active round
+      if (pDmg > 0 && this.matchManager.state === 'ROUND_ACTIVE') {
         this.controls.applyImpulse(pImpulse);
+        this.matchManager.onPlayerDamaged(pDmg, false);
       }
     }
   }
