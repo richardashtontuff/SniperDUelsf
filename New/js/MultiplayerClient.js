@@ -166,6 +166,7 @@ export class MultiplayerClient {
         position: { x: pos.x, y: pos.y, z: pos.z },
         rotation: { y: this.game.controls.yaw, pitch: this.game.controls.pitch },
         slot: this.game.weaponSystem.currentSlot,
+        skin: this.game.caseSystem ? this.game.caseSystem.equippedSkin : 'skin_agent_tactical',
         isAiming: this.game.weaponSystem.isAiming,
         isSliding: this.game.controls.isSliding
       };
@@ -230,8 +231,15 @@ export class MultiplayerClient {
   createRemotePlayer(pInfo) {
     if (this.remotePlayers.has(pInfo.id)) return;
 
-    const shirtColor = (pInfo.team === 'RED') ? 0xff4444 : 0x00d2ff;
-    const model = AssetLoader.createRobloxCharacter(shirtColor, 0x22262d, 0xffd200);
+    let skinConfig = null;
+    if (pInfo.skin && this.game.caseSystem && this.game.caseSystem.skins[pInfo.skin]) {
+      skinConfig = this.game.caseSystem.skins[pInfo.skin];
+    } else {
+      const shirtColor = (pInfo.team === 'RED') ? 0xff4444 : 0x00d2ff;
+      skinConfig = { shirtColor, pantsColor: 0x22262d, skinColor: 0xffd200 };
+    }
+
+    const model = AssetLoader.createRobloxCharacter(skinConfig);
 
     model.position.set(pInfo.position.x, pInfo.position.y, pInfo.position.z);
     model.rotation.y = pInfo.rotation ? pInfo.rotation.y : 0;
@@ -249,6 +257,7 @@ export class MultiplayerClient {
     this.remotePlayers.set(pInfo.id, {
       id: pInfo.id,
       username: pInfo.username || null,
+      currentSkin: pInfo.skin || null,
       group: model,
       head: model.userData.head,
       torso: model.userData.torso,
@@ -328,6 +337,7 @@ export class MultiplayerClient {
           this.createRemotePlayer({
             id: msg.id,
             team: 'BLUE',
+            skin: msg.skin,
             position: msg.position,
             rotation: msg.rotation
           });
@@ -335,6 +345,19 @@ export class MultiplayerClient {
 
         if (this.remotePlayers.has(msg.id)) {
           const rp = this.remotePlayers.get(msg.id);
+          if (msg.skin && rp.currentSkin !== msg.skin && this.game.caseSystem && this.game.caseSystem.skins[msg.skin]) {
+            const oldUser = rp.username;
+            this.removeRemotePlayer(msg.id);
+            this.createRemotePlayer({
+              id: msg.id,
+              username: oldUser,
+              team: 'BLUE',
+              skin: msg.skin,
+              position: msg.position,
+              rotation: msg.rotation
+            });
+            break;
+          }
           rp.targetPos.set(msg.position.x, msg.position.y, msg.position.z);
           rp.targetYaw = msg.rotation.y;
 

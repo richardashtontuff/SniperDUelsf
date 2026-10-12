@@ -881,37 +881,70 @@ export class AssetLoader {
     return root;
   }
 
-  // Iconic Roblox R6 Character with hitboxes
-  static createRobloxCharacter(shirtColor = 0x00d2ff, pantsColor = 0x22262d, skinColor = 0xffd200) {
+  // Iconic High-Fidelity Roblox R6 Character with tactical armor & hitboxes
+  static createRobloxCharacter(configOrShirtColor = 0x00d2ff, pantsColor = 0x22262d, skinColor = 0xffd200) {
     const root = new THREE.Group();
     root.name = 'RobloxPlayer';
 
-    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.5 });
-    const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.4 });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.6 });
+    let cfg = {};
+    if (typeof configOrShirtColor === 'object' && configOrShirtColor !== null) {
+      cfg = configOrShirtColor;
+    } else if (typeof configOrShirtColor === 'string') {
+      cfg = { theme: configOrShirtColor, id: configOrShirtColor };
+    } else {
+      cfg = {
+        shirtColor: configOrShirtColor,
+        pantsColor: pantsColor,
+        skinColor: skinColor
+      };
+    }
 
-    // Head (instakill hitbox)
+    const theme = cfg.theme || cfg.id || 'default';
+    const shirtColor = cfg.shirtColor || cfg.primaryColor || 0x00d2ff;
+    const pantsCol = cfg.pantsColor || 0x22262d;
+    const skinTone = cfg.skinColor || 0xffd200;
+    const armorCol = cfg.armorColor || 0x161a20;
+    const accentCol = cfg.accentColor || shirtColor;
+    const visorCol = cfg.visorColor || accentCol;
+    const hairCol = cfg.hairColor || 0x111111;
+
+    // Materials
+    const skinMat = new THREE.MeshStandardMaterial({ color: skinTone, roughness: 0.45 });
+    const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.35, metalness: 0.2 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: pantsCol, roughness: 0.65 });
+    const armorMat = new THREE.MeshStandardMaterial({ color: armorCol, roughness: 0.7, metalness: 0.35 });
+    const visorMat = new THREE.MeshStandardMaterial({
+      color: visorCol,
+      emissive: visorCol,
+      emissiveIntensity: 0.9,
+      roughness: 0.15,
+      metalness: 0.8
+    });
+    const hairMat = new THREE.MeshStandardMaterial({ color: hairCol, roughness: 0.85 });
+
+    // 1. Head (instakill hitbox - standard 0.5 x 0.5 x 0.5 at y = 1.65)
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), skinMat);
     head.position.y = 1.65;
     head.castShadow = true;
     head.userData = { isHeadshot: true };
     root.add(head);
 
-    // Torso (bodyshot hitbox)
+    // 2. Torso (bodyshot hitbox - standard 0.8 x 0.8 x 0.4 at y = 1.0)
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.4), shirtMat);
     torso.position.y = 1.0;
     torso.castShadow = true;
     torso.userData = { isHeadshot: false };
     root.add(torso);
 
-    // Limbs
+    // 3. Limbs (arms: 0.35 x 0.75 x 0.35, legs: 0.38 x 0.75 x 0.38)
     const armGeo = new THREE.BoxGeometry(0.35, 0.75, 0.35);
-    const leftArm = new THREE.Mesh(armGeo, skinMat);
+    const isSleeveless = (theme === 'skin_manga_demon' || theme === 'manga_demon' || theme === 'skin_manga_saiyan' || theme === 'manga_saiyan' || theme === 'skin_military_desert' || theme === 'military_desert');
+    const leftArm = new THREE.Mesh(armGeo, isSleeveless ? skinMat : shirtMat);
     leftArm.position.set(-0.6, 1.0, 0);
     leftArm.userData = { isHeadshot: false };
     root.add(leftArm);
 
-    const rightArm = new THREE.Mesh(armGeo, skinMat);
+    const rightArm = new THREE.Mesh(armGeo, isSleeveless ? skinMat : shirtMat);
     rightArm.position.set(0.6, 1.0, 0);
     rightArm.userData = { isHeadshot: false };
     root.add(rightArm);
@@ -927,7 +960,453 @@ export class AssetLoader {
     rightLeg.userData = { isHeadshot: false };
     root.add(rightLeg);
 
-    // 3D Miniature Held Weapon
+    // --- PROCEDURAL ACCESSORY BUILDERS ---
+    const addMangaSpikes = (hColor, accentTipColor = null, auraScale = 1.0) => {
+      const hMat = new THREE.MeshStandardMaterial({ color: hColor, roughness: 0.85 });
+      const tipMat = accentTipColor ? new THREE.MeshStandardMaterial({ color: accentTipColor, emissive: accentTipColor, emissiveIntensity: 0.5 }) : hMat;
+
+      const spikes = [
+        { pos: [0, 1.95, -0.05], rot: [-0.15, 0, 0], scale: [0.18, 0.28 * auraScale, 0.18] },
+        { pos: [0.15, 1.92, 0.05], rot: [0.1, 0, -0.32], scale: [0.16, 0.26 * auraScale, 0.16] },
+        { pos: [-0.15, 1.92, 0.05], rot: [0.1, 0, 0.32], scale: [0.16, 0.26 * auraScale, 0.16] },
+        { pos: [0.22, 1.82, -0.1], rot: [-0.2, 0.2, -0.45], scale: [0.15, 0.24 * auraScale, 0.15] },
+        { pos: [-0.22, 1.82, -0.1], rot: [-0.2, -0.2, 0.45], scale: [0.15, 0.24 * auraScale, 0.15] },
+        { pos: [0, 1.88, 0.18], rot: [0.35, 0, 0], scale: [0.17, 0.25 * auraScale, 0.17] },
+        { pos: [0, 1.78, -0.26], rot: [-0.5, 0, 0], scale: [0.16, 0.20 * auraScale, 0.14] }
+      ];
+
+      spikes.forEach(sp => {
+        const coneGeo = new THREE.ConeGeometry(sp.scale[0], sp.scale[1], 5);
+        const m = new THREE.Mesh(coneGeo, tipMat);
+        m.position.set(...sp.pos);
+        m.rotation.set(...sp.rot);
+        root.add(m);
+      });
+    };
+
+    const addCyberWings = (wingColor) => {
+      const wingMat = new THREE.MeshStandardMaterial({
+        color: wingColor,
+        emissive: wingColor,
+        emissiveIntensity: 0.85,
+        roughness: 0.2,
+        transparent: true,
+        opacity: 0.88,
+        side: THREE.DoubleSide
+      });
+      [-1, 1].forEach(side => {
+        const wingGeo = new THREE.BoxGeometry(0.55, 0.12, 0.04);
+        const wing = new THREE.Mesh(wingGeo, wingMat);
+        wing.position.set(side * 0.45, 1.25, 0.28);
+        wing.rotation.set(0.2, side * 0.45, side * 0.35);
+        root.add(wing);
+
+        const wingTipGeo = new THREE.BoxGeometry(0.35, 0.08, 0.03);
+        const wingTip = new THREE.Mesh(wingTipGeo, wingMat);
+        wingTip.position.set(side * 0.72, 1.42, 0.38);
+        wingTip.rotation.set(0.3, side * 0.55, side * 0.45);
+        root.add(wingTip);
+      });
+    };
+
+    const addNVG = (lensColor) => {
+      const goggleMat = new THREE.MeshStandardMaterial({ color: 0x111418, roughness: 0.8 });
+      const lensMat = new THREE.MeshStandardMaterial({ color: lensColor, emissive: lensColor, emissiveIntensity: 0.95 });
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 0.12), goggleMat);
+      bridge.position.set(0, 1.74, -0.28);
+      root.add(bridge);
+      [-0.14, -0.05, 0.05, 0.14].forEach(x => {
+        const lensGeo = new THREE.CylinderGeometry(0.038, 0.038, 0.12, 12);
+        lensGeo.rotateX(Math.PI / 2);
+        const lens = new THREE.Mesh(lensGeo, lensMat);
+        lens.position.set(x, 1.74, -0.34);
+        root.add(lens);
+      });
+    };
+
+    const addKasaHat = (hatColor, rimColor) => {
+      const kHatGeo = new THREE.ConeGeometry(0.48, 0.18, 16);
+      const kHatMat = new THREE.MeshStandardMaterial({ color: hatColor, roughness: 0.7 });
+      const kHat = new THREE.Mesh(kHatGeo, kHatMat);
+      kHat.position.set(0, 1.96, 0);
+      root.add(kHat);
+
+      const rimGeo = new THREE.TorusGeometry(0.48, 0.016, 8, 24);
+      rimGeo.rotateX(Math.PI / 2);
+      const rimMat = new THREE.MeshStandardMaterial({ color: rimColor, emissive: rimColor, emissiveIntensity: 0.8 });
+      const rim = new THREE.Mesh(rimGeo, rimMat);
+      rim.position.set(0, 1.88, 0);
+      root.add(rim);
+    };
+
+    const addCrossedKatanas = (sheathColor, accentGlow) => {
+      const sMat = new THREE.MeshStandardMaterial({ color: sheathColor, roughness: 0.5 });
+      const gMat = new THREE.MeshStandardMaterial({ color: accentGlow, emissive: accentGlow, emissiveIntensity: 0.7 });
+      [-1, 1].forEach(side => {
+        const sGeo = new THREE.BoxGeometry(0.05, 0.95, 0.05);
+        const s = new THREE.Mesh(sGeo, sMat);
+        s.position.set(side * 0.12, 1.1, 0.28);
+        s.rotation.set(0, 0, side * 0.55);
+        root.add(s);
+
+        const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.06), gMat);
+        hilt.position.set(side * 0.32, 1.48, 0.3);
+        hilt.rotation.set(0, 0, side * 0.55);
+        root.add(hilt);
+      });
+    };
+
+    // --- THEME-SPECIFIC ACCESSORIES ---
+    if (theme === 'skin_manga_demon' || theme === 'manga_demon') {
+      // 1. Flame Demon Slayer
+      addMangaSpikes(0x111111, 0xd63031, 1.15);
+
+      const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff4400, emissive: 0xff4400, emissiveIntensity: 0.95 });
+      const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.02), eyeMat);
+      leftEye.position.set(-0.12, 1.68, -0.26);
+      leftEye.rotation.z = -0.12;
+      const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.02), eyeMat);
+      rightEye.position.set(0.12, 1.68, -0.26);
+      rightEye.rotation.z = 0.12;
+      root.add(leftEye);
+      root.add(rightEye);
+
+      const haori = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.72, 0.46), new THREE.MeshStandardMaterial({ color: 0xd63031, roughness: 0.5 }));
+      haori.position.set(0, 0.98, 0);
+      root.add(haori);
+
+      const belt = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.12, 0.48), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }));
+      belt.position.set(0, 0.68, 0);
+      root.add(belt);
+
+      const hipKatana = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.06), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4 }));
+      hipKatana.position.set(-0.48, 0.72, 0.08);
+      hipKatana.rotation.z = -0.45;
+      root.add(hipKatana);
+
+    } else if (theme === 'skin_cyber_ninja' || theme === 'cyber_ninja') {
+      // 2. Cyber Shinobi 2099
+      const nVisor = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.06, 0.14), visorMat);
+      nVisor.position.set(0, 1.68, -0.24);
+      root.add(nVisor);
+
+      const mask = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.22, 0.15), armorMat);
+      mask.position.set(0, 1.54, -0.22);
+      root.add(mask);
+
+      addCrossedKatanas(0x111418, 0x00f7ff);
+
+      [-0.6, 0.6].forEach(x => {
+        const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.4), armorMat);
+        pauldron.position.set(x, 1.28, 0);
+        root.add(pauldron);
+
+        const neonStrip = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.42), visorMat);
+        neonStrip.position.set(x, 1.22, 0);
+        root.add(neonStrip);
+      });
+
+    } else if (theme === 'skin_specops_ghost' || theme === 'specops_ghost') {
+      // 3. Ghost Operative
+      const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.24, 0.54), armorMat);
+      helmet.position.set(0, 1.82, 0);
+      root.add(helmet);
+
+      addNVG(0x2ecc71);
+
+      const skullPlate = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.22, 0.04), new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.9 }));
+      skullPlate.position.set(0, 1.54, -0.25);
+      root.add(skullPlate);
+
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.66, 0.46), armorMat);
+      vest.position.set(0, 1.02, 0);
+      root.add(vest);
+
+      const radio = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.08), armorMat);
+      radio.position.set(-0.32, 1.22, -0.24);
+      root.add(radio);
+
+      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.26, 6), armorMat);
+      antenna.position.set(-0.32, 1.44, -0.24);
+      root.add(antenna);
+
+    } else if (theme === 'skin_manga_mecha' || theme === 'manga_mecha') {
+      // 4. Unit-01 Mecha Pilot
+      [-1, 1].forEach(side => {
+        const hornGeo = new THREE.BoxGeometry(0.06, 0.32, 0.1);
+        const horn = new THREE.Mesh(hornGeo, new THREE.MeshStandardMaterial({ color: 0x6c5ce7, roughness: 0.3 }));
+        horn.position.set(side * 0.28, 1.95, -0.05);
+        horn.rotation.set(-0.25, 0, side * 0.35);
+        root.add(horn);
+      });
+
+      const mVisor = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.14, 0.12), visorMat);
+      mVisor.position.set(0, 1.68, -0.24);
+      root.add(mVisor);
+
+      const coreGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.06, 16);
+      coreGeo.rotateX(Math.PI / 2);
+      const core = new THREE.Mesh(coreGeo, new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.95 }));
+      core.position.set(0, 1.15, -0.23);
+      root.add(core);
+
+      [-0.62, 0.62].forEach(x => {
+        const pylonGeo = new THREE.BoxGeometry(0.18, 0.44, 0.36);
+        const pylon = new THREE.Mesh(pylonGeo, new THREE.MeshStandardMaterial({ color: 0x6c5ce7, roughness: 0.35 }));
+        pylon.position.set(x, 1.35, 0.04);
+        root.add(pylon);
+
+        const pylonTrim = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.38), new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.6 }));
+        pylonTrim.position.set(x, 1.48, 0.04);
+        root.add(pylonTrim);
+      });
+
+    } else if (theme === 'skin_agent_tactical' || theme === 'agent_tactical') {
+      // 5. Agent 00: Infiltrator
+      const hair = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.18, 0.52), hairMat);
+      hair.position.set(0, 1.86, 0);
+      root.add(hair);
+
+      const glassesFrame = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.08), new THREE.MeshStandardMaterial({ color: 0xf1c40f, metalness: 0.9, roughness: 0.2 }));
+      glassesFrame.position.set(0, 1.68, -0.25);
+      root.add(glassesFrame);
+
+      const shirtTri = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.35, 0.04), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
+      shirtTri.position.set(0, 1.22, -0.21);
+      root.add(shirtTri);
+
+      const tie = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.05), new THREE.MeshStandardMaterial({ color: 0xd63031, roughness: 0.4 }));
+      tie.position.set(0, 1.12, -0.22);
+      root.add(tie);
+
+      const lapelLeft = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.55, 0.06), new THREE.MeshStandardMaterial({ color: 0x161820, roughness: 0.4 }));
+      lapelLeft.position.set(-0.24, 1.15, -0.21);
+      const lapelRight = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.55, 0.06), new THREE.MeshStandardMaterial({ color: 0x161820, roughness: 0.4 }));
+      lapelRight.position.set(0.24, 1.15, -0.21);
+      root.add(lapelLeft);
+      root.add(lapelRight);
+
+    } else if (theme === 'skin_military_desert' || theme === 'military_desert') {
+      // 6. Desert Storm Vanguard
+      const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.24, 0.56), new THREE.MeshStandardMaterial({ color: 0xdfb15b, roughness: 0.7 }));
+      helmet.position.set(0, 1.84, 0);
+      root.add(helmet);
+
+      const goggleBand = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.08, 0.58), armorMat);
+      goggleBand.position.set(0, 1.84, 0);
+      root.add(goggleBand);
+      const goggleLenses = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.06), new THREE.MeshStandardMaterial({ color: 0xffaa00, roughness: 0.2, metalness: 0.6 }));
+      goggleLenses.position.set(0, 1.84, -0.3);
+      root.add(goggleLenses);
+
+      const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.16, 0.58), new THREE.MeshStandardMaterial({ color: 0xdfb15b, roughness: 0.85 }));
+      scarf.position.set(0, 1.42, 0);
+      root.add(scarf);
+
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.65, 0.46), new THREE.MeshStandardMaterial({ color: 0x8c7853, roughness: 0.75 }));
+      vest.position.set(0, 1.02, 0);
+      root.add(vest);
+
+    } else if (theme === 'skin_military_arctic' || theme === 'military_arctic') {
+      // 7. Arctic Spec-Ops Frost
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.56, 0.54), new THREE.MeshStandardMaterial({ color: 0xedf2f7, roughness: 0.7 }));
+      hood.position.set(0, 1.68, 0.04);
+      root.add(hood);
+
+      const furTrim = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.18, 0.58), new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.9 }));
+      furTrim.position.set(0, 1.42, 0);
+      root.add(furTrim);
+
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.14, 0.12), new THREE.MeshStandardMaterial({ color: 0x38b2ac, emissive: 0x38b2ac, emissiveIntensity: 0.7 }));
+      visor.position.set(0, 1.68, -0.24);
+      root.add(visor);
+
+      const rig = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.66, 0.46), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }));
+      rig.position.set(0, 1.02, 0);
+      root.add(rig);
+
+    } else if (theme === 'skin_military_urban' || theme === 'military_urban') {
+      // 8. Urban Blackout Marine
+      const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.22, 0.54), new THREE.MeshStandardMaterial({ color: 0x2b3a4a, roughness: 0.6 }));
+      helmet.position.set(0, 1.84, 0);
+      root.add(helmet);
+
+      const riotVisor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.2, 0.08), new THREE.MeshStandardMaterial({ color: 0x63b3ed, transparent: true, opacity: 0.65, roughness: 0.1 }));
+      riotVisor.position.set(0, 1.66, -0.26);
+      root.add(riotVisor);
+
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.66, 0.46), new THREE.MeshStandardMaterial({ color: 0x1a202c, roughness: 0.7 }));
+      vest.position.set(0, 1.02, 0);
+      root.add(vest);
+
+    } else if (theme === 'skin_cyber_netrunner' || theme === 'cyber_netrunner') {
+      // 9. Neon Netrunner
+      addMangaSpikes(0xff007f, 0x00ffff, 1.05);
+
+      const cyberGlasses = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.12), new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 0.9 }));
+      cyberGlasses.position.set(0, 1.68, -0.24);
+      root.add(cyberGlasses);
+
+      const collar = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.24, 0.52), new THREE.MeshStandardMaterial({ color: 0x2d112c, roughness: 0.4 }));
+      collar.position.set(0, 1.44, 0);
+      root.add(collar);
+
+    } else if (theme === 'skin_cyber_glitch' || theme === 'cyber_glitch') {
+      // 10. Glitch Phantom
+      const gVisor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.22, 0.14), new THREE.MeshStandardMaterial({ color: 0x66fcf1, emissive: 0x66fcf1, emissiveIntensity: 0.95 }));
+      gVisor.position.set(0, 1.66, -0.22);
+      root.add(gVisor);
+
+      [-0.38, 0.36].forEach((x, idx) => {
+        const frag = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), new THREE.MeshStandardMaterial({ color: 0x45a29e, emissive: 0x66fcf1, emissiveIntensity: 0.8 }));
+        frag.position.set(x, 1.55 + idx * 0.15, -0.15);
+        frag.rotation.set(0.4, 0.5, 0.3);
+        root.add(frag);
+      });
+
+    } else if (theme === 'skin_manga_ronin' || theme === 'manga_ronin') {
+      // 11. Cyber Ronin
+      addKasaHat(0x1f2421, 0xe63946);
+
+      const mask = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.2, 0.12), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3 }));
+      mask.position.set(0, 1.54, -0.24);
+      root.add(mask);
+
+      const haori = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.72, 0.46), new THREE.MeshStandardMaterial({ color: 0x1f2421, roughness: 0.6 }));
+      haori.position.set(0, 0.98, 0);
+      root.add(haori);
+
+      const goldCrest = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.04), new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.2 }));
+      goldCrest.position.set(0, 1.15, -0.24);
+      root.add(goldCrest);
+
+      const hipKatana = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.85, 0.06), new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.3 }));
+      hipKatana.position.set(-0.48, 0.72, 0.08);
+      hipKatana.rotation.z = -0.45;
+      root.add(hipKatana);
+
+    } else if (theme === 'skin_manga_valkyrie' || theme === 'manga_valkyrie') {
+      // 12. Neon Valkyrie
+      addMangaSpikes(0xffe600, 0xffffff, 1.15);
+
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.1, 0.12), new THREE.MeshStandardMaterial({ color: 0x00d2ff, emissive: 0x00d2ff, emissiveIntensity: 0.95 }));
+      visor.position.set(0, 1.68, -0.24);
+      root.add(visor);
+
+      addCyberWings(0x00d2ff);
+
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.66, 0.44), new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.5, roughness: 0.2 }));
+      vest.position.set(0, 1.02, 0);
+      root.add(vest);
+
+      const goldTrim = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.12, 0.46), new THREE.MeshStandardMaterial({ color: 0xf1c40f, metalness: 0.85, roughness: 0.2 }));
+      goldTrim.position.set(0, 1.25, 0);
+      root.add(goldTrim);
+
+    } else if (theme === 'skin_agent_shadow' || theme === 'agent_shadow') {
+      // 13. Shadow Syndicate Assassin
+      const maskCenter = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.18), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4 }));
+      maskCenter.position.set(0, 1.55, -0.24);
+      root.add(maskCenter);
+
+      [-0.14, 0.14].forEach(x => {
+        const canGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.12, 12);
+        canGeo.rotateZ(Math.PI / 2);
+        const can = new THREE.Mesh(canGeo, new THREE.MeshStandardMaterial({ color: 0xff2a2a, emissive: 0xff2a2a, emissiveIntensity: 0.6 }));
+        can.position.set(x, 1.52, -0.26);
+        root.add(can);
+      });
+
+      const coat = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.74, 0.48), new THREE.MeshStandardMaterial({ color: 0x0f0f14, roughness: 0.5 }));
+      coat.position.set(0, 0.98, 0);
+      root.add(coat);
+
+      const tallCollar = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.28, 0.52), new THREE.MeshStandardMaterial({ color: 0x0f0f14, roughness: 0.5 }));
+      tallCollar.position.set(0, 1.48, 0);
+      root.add(tallCollar);
+
+    } else if (theme === 'skin_cyber_hazard' || theme === 'cyber_hazard') {
+      // 14. Tox-Hazmat Enforcer
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.56, 0.56), new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.6 }));
+      hood.position.set(0, 1.68, 0);
+      root.add(hood);
+
+      const amberVisor = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.12), new THREE.MeshStandardMaterial({ color: 0xff9900, emissive: 0xff9900, emissiveIntensity: 0.7 }));
+      amberVisor.position.set(0, 1.68, -0.26);
+      root.add(amberVisor);
+
+      [-0.15, 0.15].forEach(x => {
+        const fGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.1, 10);
+        fGeo.rotateX(Math.PI / 2);
+        const f = new THREE.Mesh(fGeo, new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 }));
+        f.position.set(x, 1.5, -0.28);
+        root.add(f);
+      });
+
+      const harness = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.65, 0.44), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 }));
+      harness.position.set(0, 1.02, 0);
+      root.add(harness);
+
+    } else if (theme === 'skin_manga_saiyan' || theme === 'manga_saiyan') {
+      // 15. Super Star Striker (Manga Saiyan)
+      addMangaSpikes(0x00f7ff, 0xffffff, 1.45);
+
+      const blueChest = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.04), new THREE.MeshStandardMaterial({ color: 0x004e89, roughness: 0.5 }));
+      blueChest.position.set(0, 1.18, -0.21);
+      root.add(blueChest);
+
+      const emblem = new THREE.Mesh(new THREE.CircleGeometry(0.09, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x00f7ff, emissiveIntensity: 0.8, side: THREE.DoubleSide }));
+      emblem.position.set(0.18, 1.18, -0.22);
+      root.add(emblem);
+
+      [-0.6, 0.6].forEach(x => {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.38), new THREE.MeshStandardMaterial({ color: 0x004e89, roughness: 0.5 }));
+        band.position.set(x, 0.72, 0);
+        root.add(band);
+      });
+
+      const sash = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.14, 0.46), new THREE.MeshStandardMaterial({ color: 0x004e89, roughness: 0.5 }));
+      sash.position.set(0, 0.68, 0);
+      root.add(sash);
+
+    } else {
+      // Default Classic Roblox Player
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.13, 0.12), visorMat);
+      visor.position.set(0, 1.68, -0.22);
+      root.add(visor);
+
+      const headsetBand = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.28, 0.28, 0.05, 12, 1, true, 0, Math.PI),
+        armorMat
+      );
+      headsetBand.rotation.z = Math.PI / 2;
+      headsetBand.position.set(0, 1.88, 0);
+      root.add(headsetBand);
+
+      const earCupGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.06, 10);
+      earCupGeo.rotateZ(Math.PI / 2);
+      const leftCup = new THREE.Mesh(earCupGeo, armorMat);
+      leftCup.position.set(-0.27, 1.65, 0);
+      const rightCup = new THREE.Mesh(earCupGeo, armorMat);
+      rightCup.position.set(0.27, 1.65, 0);
+      root.add(leftCup);
+      root.add(rightCup);
+
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.65, 0.44), armorMat);
+      vest.position.set(0, 1.02, 0);
+      root.add(vest);
+    }
+
+    // Standard Knee Armor Pads
+    const kneeGeo = new THREE.BoxGeometry(0.26, 0.16, 0.08);
+    const leftKnee = new THREE.Mesh(kneeGeo, armorMat);
+    leftKnee.position.set(-0.22, 0.42, -0.22);
+    const rightKnee = new THREE.Mesh(kneeGeo, armorMat);
+    rightKnee.position.set(0.22, 0.42, -0.22);
+    root.add(leftKnee);
+    root.add(rightKnee);
+
+    // 3D Miniature Held Weapon (Sniper Rifle)
     const heldWeapon = AssetLoader.createProceduralSniper();
     heldWeapon.scale.set(0.7, 0.7, 0.7);
     heldWeapon.position.set(0.35, 0.85, -0.4);
@@ -941,7 +1420,9 @@ export class AssetLoader {
       rightArm,
       leftLeg,
       rightLeg,
-      heldWeapon
+      heldWeapon,
+      theme,
+      skinConfig: cfg
     };
 
     return root;

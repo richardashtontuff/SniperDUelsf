@@ -4,17 +4,40 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>SNIPER DUELS - 3D FPS Engine</title>
-  <link rel="stylesheet" href="css/style.css">
 
-  <!-- Native ES Module Import Map for Three.js -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "./vendor/three/three.module.js",
-      "three/addons/": "./vendor/three/addons/"
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0d1117;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
-  }
-  </script>
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+    }
+    #blocker {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(10, 14, 22, 0.92);
+      z-index: 100;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
+
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
@@ -23,7 +46,7 @@
 
   <!-- Blocker / Start Screen -->
   <div id="blocker" onclick="window.onStartGameClick && window.onStartGameClick()">
-    <div class="start-card">
+    <div class="start-card" onclick="event.stopPropagation()">
       <div class="title-roblox">SNIPER DUELS</div>
       <div class="subtitle">COMPETITIVE 3D WEB FPS • FIRST TO 6 WINS</div>
 
@@ -48,12 +71,17 @@
   </div>
 
   <script>
+  window.__pendingStart = false;
   window.onStartGameClick = function() {
-    var b = document.getElementById('blocker');
-    if (b) b.style.display = 'none';
-    if (window.__gameEngineInstance) {
+    if (window.__gameEngineInstance && window.__gameEngineInstance.controls) {
+      var b = document.getElementById('blocker');
+      if (b) b.style.display = 'none';
       if (window.__gameEngineInstance.audio) window.__gameEngineInstance.audio.ensureContext();
-      if (window.__gameEngineInstance.controls) window.__gameEngineInstance.controls.startGame();
+      window.__gameEngineInstance.controls.startGame();
+    } else {
+      window.__pendingStart = true;
+      var prompt = document.querySelector('.play-prompt');
+      if (prompt) prompt.textContent = 'STARTING 3D ENGINE...';
     }
   };
   </script>
@@ -150,7 +178,7 @@
       <div class="currency-bar">
         <span id="coin-display">350 🪙</span>
         <button id="loadout-open-btn" class="hud-btn" style="background: linear-gradient(135deg, #00d2ff, #0066aa);">🎒 LOADOUT</button>
-        <button id="shop-open-btn" class="hud-btn">CRATES 📦</button>
+        <button id="shop-open-btn" class="hud-btn">CASES & SKINS 📦</button>
         <button id="map-open-btn" class="hud-btn" style="background: linear-gradient(135deg, #ffaa00, #ff6600);">MAPS 🗺️</button>
         <button id="auth-menu-btn" class="hud-btn" style="background: linear-gradient(135deg, #00d2ff, #0077cc);">👤 ACCOUNT</button>
         <button id="settings-open-btn" class="hud-btn" style="background: linear-gradient(135deg, #718096, #4a5568);">⚙️</button>
@@ -248,7 +276,7 @@
   <div id="shop-modal">
     <div class="shop-window">
       <div class="shop-header">
-        <div class="shop-title">WEAPON CASE UNBOXING & SKINS</div>
+        <div class="shop-title">OPERATOR SKINS & WEAPON CRATE SHOP</div>
         <div style="display: flex; align-items: center; gap: 16px;">
           <span style="color: var(--gold); font-weight: bold;"><span id="shop-coins-counter">350</span> 🪙</span>
           <button id="shop-close-btn" class="shop-close-x">&times;</button>
@@ -455,5 +483,5 @@
 
   <!-- Main Game Script -->
   <script type="module" src="js/main.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a49062bcf896b911',t:'MTc5MTc0ODE0MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a49344a28ce2e640',t:'MTc5MTc3ODM2NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

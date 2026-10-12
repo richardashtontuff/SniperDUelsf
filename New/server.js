@@ -688,6 +688,7 @@ function handleClientMessage(senderId, data) {
       player.position = data.position;
       player.rotation = data.rotation;
       player.slot = data.slot;
+      player.skin = data.skin;
       player.isAiming = data.isAiming;
       player.isSliding = data.isSliding;
 
@@ -697,6 +698,7 @@ function handleClientMessage(senderId, data) {
         position: data.position,
         rotation: data.rotation,
         slot: data.slot,
+        skin: data.skin,
         isAiming: data.isAiming,
         isSliding: data.isSliding
       });
