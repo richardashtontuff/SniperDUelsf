@@ -402,17 +402,27 @@ export class MultiplayerClient {
 
       case 'MATCH_START_2P':
         this.currentMatchId = msg.matchId;
+        this.currentRoomIndex = msg.roomIndex || 1;
+        this.currentArenaOffset = msg.arenaOffset || { x: 0, y: 0, z: 0 };
         this.currentOpponentId = msg.opponentId;
         this.opponentUsername = msg.opponentUsername || msg.opponentId;
         this.isTwoPlayerMatch = true;
         if (this.game.matchManager) {
           this.game.matchManager.opponentUsername = this.opponentUsername;
+          this.game.matchManager.roomIndex = this.currentRoomIndex;
         }
-        console.log(`[Matchmaking] 2-Player Match starting against ${this.opponentUsername}! Team: ${msg.myTeam}, Arena: ${msg.selectedMap}`);
+        console.log(`[Matchmaking] 2-Player Match starting in Dedicated Room #${this.currentRoomIndex} (Offset X: ${this.currentArenaOffset.x}) against ${this.opponentUsername}! Team: ${msg.myTeam}, Arena: ${msg.selectedMap}`);
 
         if (this.voteInterval) {
           clearInterval(this.voteInterval);
           this.voteInterval = null;
+        }
+
+        // Clean up any non-opponent remote players so our room is pristine
+        for (const [id, rp] of this.remotePlayers.entries()) {
+          if (id !== msg.opponentId) {
+            this.removeRemotePlayer(id);
+          }
         }
 
         const chosenMap = msg.selectedMap || 'blockout';
@@ -430,21 +440,33 @@ export class MultiplayerClient {
           const overlay = document.getElementById('map-vote-overlay');
           if (overlay) overlay.style.display = 'none';
 
-          // Load the chosen arena
-          this.game.map.loadArena(chosenMap);
+          // Load the chosen arena in our DEDICATED ROOM!
+          this.game.map.loadArena(chosenMap, this.currentArenaOffset);
 
-          // Ensure opponent model is spawned
+          // Ensure opponent model is spawned at the dedicated room position
+          const oppSpawnZ = (msg.opponentTeam === 'RED' ? -25 : 55);
           if (!this.remotePlayers.has(msg.opponentId)) {
             this.createRemotePlayer({
               id: msg.opponentId,
               username: this.opponentUsername,
               team: msg.opponentTeam,
-              position: { x: 0, y: 2.55, z: (msg.opponentTeam === 'RED' ? -25 : 55) }
+              position: {
+                x: this.currentArenaOffset.x + 0,
+                y: 2.55,
+                z: this.currentArenaOffset.z + oppSpawnZ
+              }
             });
           }
 
           // Delegate to match manager to start 2-player duel!
-          this.game.matchManager.startTwoPlayerMatch(msg.myTeam, msg.opponentId, chosenMap, msg.maxScore, this.opponentUsername);
+          this.game.matchManager.startTwoPlayerMatch(
+            msg.myTeam,
+            msg.opponentId,
+            chosenMap,
+            msg.maxScore,
+            this.opponentUsername,
+            this.currentRoomIndex
+          );
         }, 1200);
         break;
 

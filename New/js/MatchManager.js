@@ -190,11 +190,12 @@ export class MatchManager {
   }
 
   // Starts 2-Player Match triggered by WebSocket Server!
-  startTwoPlayerMatch(myTeam, opponentId, chosenMap = 'blockout', maxScore = 3, opponentUsername = null) {
+  startTwoPlayerMatch(myTeam, opponentId, chosenMap = 'blockout', maxScore = 3, opponentUsername = null, roomIndex = 1) {
     this.isTwoPlayer = true;
     this.opponentId = opponentId;
     this.opponentUsername = opponentUsername || (this.mpClient ? this.mpClient.opponentUsername : null);
     this.myTeam = myTeam;
+    this.roomIndex = roomIndex || 1;
     this.activePad = null;
     this.isOnQueuePad = false;
     this.maxScore = maxScore || 3;
@@ -242,11 +243,12 @@ export class MatchManager {
       }
     }
 
-    // Teleport local player to team perch
+    // Teleport local player to team perch in the dedicated room
+    const targetLook = new THREE.Vector3(this.map.arenaOffset ? this.map.arenaOffset.x : 0, 1.8, 0);
     if (this.myTeam === 'BLUE') {
-      this.controls.teleport(this.map.spawnBlue, new THREE.Vector3(0, 1.8, 0));
+      this.controls.teleport(this.map.spawnBlue, targetLook);
     } else {
-      this.controls.teleport(this.map.spawnOrange, new THREE.Vector3(0, 1.8, 0));
+      this.controls.teleport(this.map.spawnOrange, targetLook);
     }
 
     // Clear damage vignette
@@ -601,9 +603,11 @@ export class MatchManager {
     this.isTwoPlayer = false;
     this.opponentId = null;
     this.opponentUsername = null;
+    this.roomIndex = null;
     this.activePad = null;
     this.isOnQueuePad = false;
     this.controls.resetFromDeath();
+    this.map.loadArena('blockout', { x: 0, y: 0, z: 0 });
     this.controls.teleport(this.map.lobbySpawn, new THREE.Vector3(0, 1.8, -120));
     this.updateStateBanner('LOBBY PRACTICE - STEP ON A DUEL PAD TO PLAY', true, '#ffffff');
     this.scorePlayer = 0;

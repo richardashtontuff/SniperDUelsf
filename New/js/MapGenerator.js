@@ -383,9 +383,10 @@ export class MapGenerator {
     this.loadArena('blockout');
   }
 
-  // Switch active arena dynamically
-  loadArena(mapName) {
+  // Switch active arena dynamically into its dedicated room
+  loadArena(mapName, arenaOffset = { x: 0, y: 0, z: 0 }) {
     this.currentMapName = mapName;
+    this.arenaOffset = arenaOffset || { x: 0, y: 0, z: 0 };
 
     // Update panoramic Sky Dome & lighting atmosphere
     this.updateSkyDome(mapName);
@@ -403,6 +404,10 @@ export class MapGenerator {
     this.arenaColliders = [];
     this.waterMesh = null;
 
+    // Physically relocate arena container to dedicated room coordinates
+    this.arenaGroup.position.set(this.arenaOffset.x, this.arenaOffset.y, this.arenaOffset.z);
+    this.arenaGroup.updateMatrixWorld(true);
+
     if (mapName === 'poolday') {
       this.buildPoolDayArena();
     } else if (mapName === 'rooftop') {
@@ -410,6 +415,12 @@ export class MapGenerator {
     } else {
       this.buildBlockoutArena();
     }
+
+    // Offset spawn positions to the dedicated room
+    this.spawnBlue.x += this.arenaOffset.x;
+    this.spawnBlue.z += this.arenaOffset.z;
+    this.spawnOrange.x += this.arenaOffset.x;
+    this.spawnOrange.z += this.arenaOffset.z;
 
     // Recombine colliders
     this.colliders = [...this.lobbyColliders, ...this.arenaColliders];

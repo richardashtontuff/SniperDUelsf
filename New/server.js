@@ -650,6 +650,7 @@ function handleConnection(ws) {
         clearTimeout(match.timerInterval);
         clearInterval(match.timerInterval);
       }
+      releaseRoomSlot(match.roomIndex);
       const opponentId = match.p1 === playerId ? match.p2 : match.p1;
       const opponent = clients.get(opponentId);
       if (opponent && opponent.ws.readyState === ws.OPEN) {
@@ -678,12 +679,38 @@ function handleConnection(ws) {
   });
 }
 
+let nextRoomSlot = 1;
+const freeRoomSlots = [];
+
+function allocateRoomSlot() {
+  if (freeRoomSlots.length > 0) {
+    return freeRoomSlots.shift();
+  }
+  return nextRoomSlot++;
+}
+
+function releaseRoomSlot(slot) {
+  if (slot && !freeRoomSlots.includes(slot)) {
+    freeRoomSlots.push(slot);
+    freeRoomSlots.sort((a, b) => a - b);
+  }
+}
+
+function broadcastToLobbyExcept(excludeId, msg) {
+  const payload = JSON.stringify(msg);
+  for (const [id, client] of clients.entries()) {
+    if (id !== excludeId && !client.matchId && client.ws.readyState === client.ws.OPEN) {
+      client.ws.send(payload);
+    }
+  }
+}
+
 function handleClientMessage(senderId, data) {
   const player = clients.get(senderId);
   if (!player) return;
 
   switch (data.type) {
-    // 60Hz transform sync
+    // 60Hz transform sync (Strict Room Isolation: sent only to opponent in match, or lobby players in lobby)
     case 'SYNC_TRANSFORM':
       player.position = data.position;
       player.rotation = data.rotation;
@@ -692,16 +719,34 @@ function handleClientMessage(senderId, data) {
       player.isAiming = data.isAiming;
       player.isSliding = data.isSliding;
 
-      broadcastExcept(senderId, {
-        type: 'PLAYER_TRANSFORM',
-        id: senderId,
-        position: data.position,
-        rotation: data.rotation,
-        slot: data.slot,
-        skin: data.skin,
-        isAiming: data.isAiming,
-        isSliding: data.isSliding
-      });
+      if (player.matchId && activeMatches.has(player.matchId)) {
+        const match = activeMatches.get(player.matchId);
+        const oppId = (match.p1 === senderId) ? match.p2 : match.p1;
+        const opp = clients.get(oppId);
+        if (opp && opp.ws.readyState === opp.ws.OPEN) {
+          opp.ws.send(JSON.stringify({
+            type: 'PLAYER_TRANSFORM',
+            id: senderId,
+            position: data.position,
+            rotation: data.rotation,
+            slot: data.slot,
+            skin: data.skin,
+            isAiming: data.isAiming,
+            isSliding: data.isSliding
+          }));
+        }
+      } else {
+        broadcastToLobbyExcept(senderId, {
+          type: 'PLAYER_TRANSFORM',
+          id: senderId,
+          position: data.position,
+          rotation: data.rotation,
+          slot: data.slot,
+          skin: data.skin,
+          isAiming: data.isAiming,
+          isSliding: data.isSliding
+        });
+      }
       break;
 
     // Player steps ON the Middle 1v1 Queue Mat
@@ -734,7 +779,7 @@ function handleClientMessage(senderId, data) {
       }
       break;
 
-    // Gunshot, knife slash, or rocket launch
+    // Gunshot, knife slash, or rocket launch (Isolated to specific room)
     case 'FIRE_WEAPON':
       if (player.matchId && activeMatches.has(player.matchId)) {
         const match = activeMatches.get(player.matchId);
@@ -742,23 +787,43 @@ function handleClientMessage(senderId, data) {
           match.lastRPGLauncherId = senderId;
           match.lastRPGFireTime = Date.now();
         }
+        const oppId = (match.p1 === senderId) ? match.p2 : match.p1;
+        const opp = clients.get(oppId);
+        if (opp && opp.ws.readyState === opp.ws.OPEN) {
+          opp.ws.send(JSON.stringify({
+            type: 'REMOTE_FIRE',
+            id: senderId,
+            origin: data.origin,
+            direction: data.direction,
+            spread: data.spread,
+            isAiming: data.isAiming,
+            weaponType: data.weaponType
+          }));
+        }
+      } else {
+        broadcastToLobbyExcept(senderId, {
+          type: 'REMOTE_FIRE',
+          id: senderId,
+          origin: data.origin,
+          direction: data.direction,
+          spread: data.spread,
+          isAiming: data.isAiming,
+          weaponType: data.weaponType
+        });
       }
-      broadcastExcept(senderId, {
-        type: 'REMOTE_FIRE',
-        id: senderId,
-        origin: data.origin,
-        direction: data.direction,
-        spread: data.spread,
-        isAiming: data.isAiming,
-        weaponType: data.weaponType
-      });
       break;
 
     // Damage inflicted in 1v1 Duel
     case 'INFLICT_DAMAGE':
       // Cannot inflict damage inside the lobby - only in active matches
-      if (!player.matchId) {
-        console.log(`[Combat] Blocked damage from ${senderId}: players are in lobby.`);
+      if (!player.matchId || !activeMatches.has(player.matchId)) {
+        console.log(`[Combat] Blocked damage from ${senderId}: player not in active match.`);
+        break;
+      }
+
+      const match = activeMatches.get(player.matchId);
+      if ((match.p1 !== senderId && match.p2 !== senderId) || (match.p1 !== data.targetId && match.p2 !== data.targetId)) {
+        console.log(`[Combat] Blocked cross-room damage attempt between ${senderId} and ${data.targetId}`);
         break;
       }
 
@@ -875,6 +940,7 @@ function handleClientMessage(senderId, data) {
 
               queuePlayers.delete(match.p1);
               queuePlayers.delete(match.p2);
+              releaseRoomSlot(match.roomIndex);
               activeMatches.delete(matchId);
               broadcastQueueStatus();
             } else {
@@ -1011,6 +1077,7 @@ function handleClientMessage(senderId, data) {
             opponent.onQueuePad = false;
           }
           activeMatches.delete(player.matchId);
+          releaseRoomSlot(m.roomIndex);
         }
         player.matchId = null;
       }
@@ -1056,8 +1123,13 @@ function checkMatchmakingQueue() {
     p1.health = 100;
     p2.health = 100;
 
+    const roomIndex = allocateRoomSlot();
+    const arenaOffset = { x: (roomIndex - 1) * 350, y: 0, z: 0 };
+
     const matchData = {
       id: matchId,
+      roomIndex: roomIndex,
+      arenaOffset: arenaOffset,
       p1: p1Id,
       p2: p2Id,
       state: 'MAP_VOTING',
@@ -1073,11 +1145,13 @@ function checkMatchmakingQueue() {
     };
     activeMatches.set(matchId, matchData);
 
-    console.log(`[1v1 Match] Started 1v1 map vote: ${p1Username} (BLUE) vs ${p2Username} (RED) on Middle Platform!`);
+    console.log(`[1v1 Match] Started 1v1 in SEPARATE ARENA ROOM #${roomIndex} (Offset X: ${arenaOffset.x}): ${p1Username} (BLUE) vs ${p2Username} (RED)!`);
 
     const voteMsg1 = JSON.stringify({
       type: 'MAP_VOTE_START',
       matchId: matchId,
+      roomIndex: roomIndex,
+      arenaOffset: arenaOffset,
       opponentId: p2Id,
       opponentUsername: p2Username,
       myUsername: p1Username,
@@ -1088,6 +1162,8 @@ function checkMatchmakingQueue() {
     const voteMsg2 = JSON.stringify({
       type: 'MAP_VOTE_START',
       matchId: matchId,
+      roomIndex: roomIndex,
+      arenaOffset: arenaOffset,
       opponentId: p1Id,
       opponentUsername: p1Username,
       myUsername: p2Username,
@@ -1151,6 +1227,8 @@ function resolveMapVote(match) {
   const startMsg1 = JSON.stringify({
     type: 'MATCH_START_2P',
     matchId: match.id,
+    roomIndex: match.roomIndex,
+    arenaOffset: match.arenaOffset,
     opponentId: match.p2,
     opponentUsername: p2Username,
     myUsername: p1Username,
@@ -1165,6 +1243,8 @@ function resolveMapVote(match) {
   const startMsg2 = JSON.stringify({
     type: 'MATCH_START_2P',
     matchId: match.id,
+    roomIndex: match.roomIndex,
+    arenaOffset: match.arenaOffset,
     opponentId: match.p1,
     opponentUsername: p1Username,
     myUsername: p2Username,
