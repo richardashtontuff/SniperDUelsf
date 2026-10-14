@@ -538,8 +538,17 @@ export class GameEngine {
       });
     }
 
+    const tutorialReplayBtn = document.getElementById('tutorial-replay-btn');
+    if (tutorialReplayBtn) {
+      bindAction(tutorialReplayBtn, () => {
+        this.closeSettingsModal();
+        if (this.startTutorialTour) this.startTutorialTour(true);
+      });
+    }
+
     // Initialize User Authentication System (Wasmer MySQL / LocalStorage)
     this.initAuthSystem();
+    this.initTutorialTour();
   }
 
   // ==========================================
@@ -878,6 +887,168 @@ export class GameEngine {
         }
       }
     } catch (e) {}
+  }
+
+  // ==========================================
+  // FIRST-TIME LOGIN ONBOARDING TUTORIAL TOUR (STEP-BY-STEP WITH ARROWS & SKIP)
+  // ==========================================
+  initTutorialTour() {
+    const overlay = document.getElementById('tutorial-tour-overlay');
+    const card = document.getElementById('tutorial-card');
+    const arrow = document.getElementById('tutorial-arrow');
+    const badge = document.getElementById('tutorial-badge');
+    const title = document.getElementById('tutorial-title');
+    const desc = document.getElementById('tutorial-desc');
+    const nextBtn = document.getElementById('tutorial-next-btn');
+    const skipBtn = document.getElementById('tutorial-skip-btn');
+
+    if (!overlay || !card || !nextBtn || !skipBtn) return;
+
+    const steps = [
+      {
+        badge: 'STEP 1 OF 5',
+        title: '1. ACCOUNT & CLOUD SAVE 👤',
+        desc: 'Sign in or register your account! Your coins, loadout, operator skins, and match history will be saved to your cloud profile.',
+        arrowDir: 'left',
+        getPos: (cardW) => {
+          const el = document.getElementById('auth-widget-btn') || document.getElementById('auth-sidebar-widget');
+          if (!el) return { top: 72, left: 240, arrowTop: 30 };
+          const rect = el.getBoundingClientRect();
+          const targetCenterY = rect.top + rect.height / 2;
+          const top = Math.max(16, Math.min(window.innerHeight - 220, targetCenterY - 45));
+          const left = Math.min(window.innerWidth - cardW - 16, rect.right + 18);
+          const arrowTop = Math.max(18, Math.min(130, targetCenterY - top - 12));
+          return { top, left, arrowTop };
+        }
+      },
+      {
+        badge: 'STEP 2 OF 5',
+        title: '2. WEAPON LOADOUT 🎒',
+        desc: 'Customize your primary weapon! Equip the AWP Bolt-Action, Hunting Rifle, AR-15, Tactical Shotgun, or explosive RPG-7 Launcher.',
+        arrowDir: 'up',
+        getPos: (cardW) => {
+          const el = document.getElementById('loadout-open-btn');
+          if (!el) return { top: 90, left: window.innerWidth - cardW - 20, arrowLeft: cardW / 2 };
+          const rect = el.getBoundingClientRect();
+          const targetCenterX = rect.left + rect.width / 2;
+          const top = rect.bottom + 16;
+          const left = Math.max(16, Math.min(window.innerWidth - cardW - 16, targetCenterX - cardW / 2));
+          const arrowLeft = Math.max(18, Math.min(cardW - 42, targetCenterX - left - 12));
+          return { top, left, arrowLeft };
+        }
+      },
+      {
+        badge: 'STEP 3 OF 5',
+        title: '3. CASES & 3D SKINS 📦',
+        desc: 'Unbox 15 diverse futuristic, cyber, and gothic operator skins, knives, and snipers! Inspect any item in real-time 3D with 360° preview.',
+        arrowDir: 'up',
+        getPos: (cardW) => {
+          const el = document.getElementById('shop-open-btn');
+          if (!el) return { top: 90, left: window.innerWidth - cardW - 20, arrowLeft: cardW / 2 };
+          const rect = el.getBoundingClientRect();
+          const targetCenterX = rect.left + rect.width / 2;
+          const top = rect.bottom + 16;
+          const left = Math.max(16, Math.min(window.innerWidth - cardW - 16, targetCenterX - cardW / 2));
+          const arrowLeft = Math.max(18, Math.min(cardW - 42, targetCenterX - left - 12));
+          return { top, left, arrowLeft };
+        }
+      },
+      {
+        badge: 'STEP 4 OF 5',
+        title: '4. LIVE LOBBY CHAT 💬',
+        desc: 'Chat with everyone on the server in real-time under your registered username! Press "/" or click the chat button to type and send messages.',
+        arrowDir: 'left',
+        getPos: (cardW) => {
+          const el = (document.getElementById('chat-open-btn') && document.getElementById('chat-open-btn').style.display !== 'none')
+            ? document.getElementById('chat-open-btn')
+            : (document.getElementById('chatroom-container') || document.getElementById('chat-open-btn'));
+          if (!el) return { top: 120, left: 380, arrowTop: 30 };
+          const rect = el.getBoundingClientRect();
+          const targetCenterY = rect.top + Math.min(36, rect.height / 2);
+          const top = Math.max(16, Math.min(window.innerHeight - 220, targetCenterY - 45));
+          const left = Math.min(window.innerWidth - cardW - 16, rect.right + 18);
+          const arrowTop = Math.max(18, Math.min(130, targetCenterY - top - 12));
+          return { top, left, arrowTop };
+        }
+      },
+      {
+        badge: 'STEP 5 OF 5',
+        title: '5. DUEL PADS & COMBAT ⚔️',
+        desc: 'Step on the green middle floor mat to queue 1v1 against a real player, or step on the side mats for solo bot practice. You are ready to duel!',
+        arrowDir: 'down',
+        getPos: (cardW) => {
+          const top = Math.max(40, window.innerHeight * 0.44);
+          const left = Math.max(16, (window.innerWidth - cardW) / 2);
+          const arrowLeft = cardW / 2 - 12;
+          return { top, left, arrowLeft };
+        }
+      }
+    ];
+
+    let currentStep = 0;
+
+    const showStep = (idx) => {
+      if (idx >= steps.length) {
+        completeTutorial();
+        return;
+      }
+      currentStep = idx;
+      const s = steps[idx];
+      badge.textContent = s.badge;
+      title.textContent = s.title;
+      desc.textContent = s.desc;
+      nextBtn.textContent = (idx === steps.length - 1) ? 'FINISH ✓' : 'NEXT ➔';
+
+      arrow.className = `tutorial-arrow ${s.arrowDir}`;
+
+      const cardW = card.offsetWidth || 320;
+      const pos = s.getPos(cardW);
+      card.style.top = `${pos.top}px`;
+      card.style.left = `${pos.left}px`;
+
+      if (s.arrowDir === 'up' || s.arrowDir === 'down') {
+        arrow.style.left = `${pos.arrowLeft !== undefined ? pos.arrowLeft : (cardW / 2 - 12)}px`;
+        arrow.style.top = '';
+      } else if (s.arrowDir === 'left' || s.arrowDir === 'right') {
+        arrow.style.top = `${pos.arrowTop !== undefined ? pos.arrowTop : 30}px`;
+        arrow.style.left = '';
+      }
+    };
+
+    const completeTutorial = () => {
+      overlay.style.display = 'none';
+      try {
+        localStorage.setItem('sniper_duels_tutorial_done', 'true');
+      } catch (err) {}
+    };
+
+    nextBtn.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      showStep(currentStep + 1);
+    };
+
+    skipBtn.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      completeTutorial();
+    };
+
+    this.startTutorialTour = (force = false) => {
+      try {
+        const done = localStorage.getItem('sniper_duels_tutorial_done');
+        if (!done || force) {
+          overlay.style.display = 'block';
+          try { document.exitPointerLock(); } catch (err) {}
+          showStep(0);
+        }
+      } catch (err) {}
+    };
+
+    // Auto-launch on first logon if not completed yet
+    setTimeout(() => {
+      this.startTutorialTour(false);
+    }, 1500);
   }
 
   openMapModal() {

@@ -627,6 +627,12 @@ function handleConnection(ws) {
     queuePlayers: queuePlayers.size
   });
 
+  // Send lobby chat history so any new player joining can read previous messages
+  ws.send(JSON.stringify({
+    type: 'CHAT_HISTORY',
+    messages: lobbyChatHistory
+  }));
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
@@ -681,6 +687,8 @@ function handleConnection(ws) {
 
 let nextRoomSlot = 1;
 const freeRoomSlots = [];
+const lobbyChatHistory = [];
+const MAX_CHAT_HISTORY = 100;
 
 function allocateRoomSlot() {
   if (freeRoomSlots.length > 0) {
@@ -775,6 +783,34 @@ function handleClientMessage(senderId, data) {
           type: 'PLAYER_NAME_UPDATE',
           id: senderId,
           username: player.username
+        });
+      }
+      break;
+
+    // Real-time Lobby Chat
+    case 'SEND_CHAT':
+      if (typeof data.text === 'string') {
+        const rawText = data.text.trim().slice(0, 200);
+        if (rawText.length === 0) break;
+
+        const senderName = player.username || `Player_${senderId.slice(0, 4)}`;
+        const chatItem = {
+          id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          senderId: senderId,
+          senderName: senderName,
+          text: rawText,
+          timestamp: Date.now()
+        };
+
+        lobbyChatHistory.push(chatItem);
+        if (lobbyChatHistory.length > MAX_CHAT_HISTORY) {
+          lobbyChatHistory.shift();
+        }
+
+        // Everyone can see what you type!
+        broadcast({
+          type: 'CHAT_MESSAGE',
+          message: chatItem
         });
       }
       break;

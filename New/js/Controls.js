@@ -504,6 +504,9 @@ export class FPSControls {
   }
 
   onKeyDown(e) {
+    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+      return;
+    }
     if (!this.isGameActive) return;
 
     const key = (e.key || '').toLowerCase();
@@ -582,6 +585,9 @@ export class FPSControls {
   }
 
   onKeyUp(e) {
+    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+      return;
+    }
     if (!this.isGameActive) return;
 
     const key = (e.key || '').toLowerCase();

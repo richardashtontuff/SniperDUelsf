@@ -162,6 +162,20 @@
       <button id="mobile-toggle-btn" style="background: rgba(0,210,255,0.25); border: 1px solid #00d2ff; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">🕹️ TOUCH</button>
     </div>
 
+    <!-- Floating Closeable Lobby Chatroom -->
+    <div id="chatroom-container">
+      <div class="chat-header">
+        <div class="chat-header-title">💬 LOBBY CHAT</div>
+        <button id="chat-close-btn" class="chat-toggle-btn" title="Close Chat">✕</button>
+      </div>
+      <div id="chat-messages" class="chat-messages-box"></div>
+      <form id="chat-form" class="chat-input-row" onsubmit="return false;">
+        <input type="text" id="chat-input" placeholder="Type a message (Enter)..." maxlength="200" autocomplete="off">
+        <button type="submit" id="chat-send-btn">SEND</button>
+      </form>
+    </div>
+    <button id="chat-open-btn" class="chat-launcher-btn" style="display: none;">💬 CHAT</button>
+
     <!-- Side Account Login / Profile Widget -->
     <div id="auth-sidebar-widget">
       <button id="auth-widget-btn" class="auth-widget-btn" title="Sign In or Create Account">
@@ -271,6 +285,20 @@
 
   <!-- Low Health Blood Vignette -->
   <div id="low-health-vignette"></div>
+
+  <!-- First-Time Login Guided Tutorial Tour -->
+  <div id="tutorial-tour-overlay">
+    <div id="tutorial-card" class="tutorial-card">
+      <div id="tutorial-arrow" class="tutorial-arrow up"></div>
+      <div id="tutorial-badge" class="tutorial-badge">STEP 1 OF 5</div>
+      <div id="tutorial-title" class="tutorial-title">1. ACCOUNT & CLOUD SAVE 👤</div>
+      <div id="tutorial-desc" class="tutorial-desc">Click here to Sign In or Register your account! Your coins, loadout, operator skins, and stats will be saved to your cloud profile.</div>
+      <div class="tutorial-btn-row">
+        <button id="tutorial-skip-btn" class="tutorial-skip-btn">SKIP TUTORIAL ✕</button>
+        <button id="tutorial-next-btn" class="tutorial-next-btn">NEXT ➔</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Crate Shop Modal -->
   <div id="shop-modal">
@@ -433,6 +461,12 @@
               </select>
             </div>
           </div>
+          <div class="setting-row">
+            <div class="setting-label">Guided Tutorial Tour</div>
+            <div class="setting-ctrl">
+              <button id="tutorial-replay-btn" class="hud-btn" style="background: linear-gradient(135deg, #00d2ff, #0077ff);">REPLAY TUTORIAL 💡</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -483,5 +517,5 @@
 
   <!-- Main Game Script -->
   <script type="module" src="js/main.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a49344a28ce2e640',t:'MTc5MTc3ODM2NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>

@@ -1118,6 +1118,66 @@ export class MapGenerator {
     innerStud.position.y = 0.08;
     group.add(innerStud);
 
+    // Floating Holographic Billboard Sign hovering directly above the floor mat
+    if (typeof document !== 'undefined') {
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 512;
+      signCanvas.height = 160;
+      const sCtx = signCanvas.getContext('2d');
+
+      // Dark card container
+      sCtx.fillStyle = 'rgba(11, 16, 25, 0.94)';
+      sCtx.beginPath();
+      sCtx.roundRect(8, 8, 496, 144, 20);
+      sCtx.fill();
+
+      // Neon border matching pad theme
+      const hexStr = typeof colorHex === 'number' ? '#' + colorHex.toString(16).padStart(6, '0') : colorHex;
+      sCtx.strokeStyle = hexStr;
+      sCtx.lineWidth = 6;
+      sCtx.stroke();
+
+      let title = labelText;
+      let subtitle = 'STEP ON MAT TO PLAY';
+      let badge = 'FIRST TO 3 WINS';
+
+      if (mode === 'multiplayer_queue') {
+        title = '⚔️ 1v1 DUEL QUEUE MAT';
+        subtitle = 'STAND HERE TO DUEL A REAL PLAYER (2/2)';
+        badge = 'HUMAN VS HUMAN 1v1 • MAP VOTING';
+      } else if (mode === 'casual') {
+        title = '🤖 CASUAL BOT DUEL';
+        subtitle = 'WARM UP & TARGET PRACTICE (SOLO)';
+        badge = 'NORMAL AI OPPONENT • SOLO PRACTICE';
+      } else if (mode === 'hard') {
+        title = '👑 AWP GOD BOT DUEL';
+        subtitle = 'EXTREME FLICK SHOTS & REFLEXES (SOLO)';
+        badge = 'EXPERT AI CHALLENGE • SOLO DUEL';
+      }
+
+      // Title
+      sCtx.fillStyle = hexStr;
+      sCtx.font = '900 32px "Segoe UI", sans-serif';
+      sCtx.textAlign = 'center';
+      sCtx.fillText(title, 256, 52);
+
+      // Subtitle
+      sCtx.fillStyle = '#ffffff';
+      sCtx.font = '700 20px "Segoe UI", sans-serif';
+      sCtx.fillText(subtitle, 256, 92);
+
+      // Badge
+      sCtx.fillStyle = '#94a3b8';
+      sCtx.font = 'bold 15px "Segoe UI", sans-serif';
+      sCtx.fillText(badge, 256, 126);
+
+      const signTex = new THREE.CanvasTexture(signCanvas);
+      const signSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex, transparent: true }));
+      signSprite.position.set(0, 3.4, 0);
+      signSprite.scale.set(5.2, 1.6, 1.0);
+      group.add(signSprite);
+    }
+
     group.userData = {
       isDuelPad: true,
       radius: radius / 2,

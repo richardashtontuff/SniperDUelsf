@@ -19,6 +19,7 @@ export class MultiplayerClient {
 
     this.syncInterval = null;
     this.initVoteUI();
+    this.setupChat();
     this.connect();
   }
 
@@ -322,6 +323,22 @@ export class MultiplayerClient {
         this.removeRemotePlayer(msg.playerId);
         break;
 
+      case 'CHAT_HISTORY':
+        const boxHist = document.getElementById('chat-messages');
+        if (boxHist) {
+          boxHist.innerHTML = '';
+          if (Array.isArray(msg.messages)) {
+            msg.messages.forEach(m => this.appendChatMessage(m));
+          }
+        }
+        break;
+
+      case 'CHAT_MESSAGE':
+        if (msg.message) {
+          this.appendChatMessage(msg.message);
+        }
+        break;
+
       case 'QUEUE_UPDATE':
         const elQ = document.getElementById('queue-count');
         if (elQ && msg.playersOnPad !== undefined) elQ.textContent = msg.playersOnPad;
@@ -538,5 +555,121 @@ export class MultiplayerClient {
         }
         break;
     }
+  }
+
+  setupChat() {
+    if (typeof document === 'undefined') return;
+
+    const container = document.getElementById('chatroom-container');
+    const openBtn = document.getElementById('chat-open-btn');
+    const closeBtn = document.getElementById('chat-close-btn');
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('chat-input');
+
+    if (closeBtn && container && openBtn) {
+      const handleClose = (e) => {
+        if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
+        container.style.display = 'none';
+        openBtn.style.display = 'block';
+        if (input) input.blur();
+      };
+      closeBtn.addEventListener('click', handleClose);
+      closeBtn.addEventListener('touchend', handleClose, { passive: false });
+    }
+
+    if (openBtn && container) {
+      const handleOpen = (e) => {
+        if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
+        container.style.display = 'flex';
+        openBtn.style.display = 'none';
+        if (input) input.focus();
+      };
+      openBtn.addEventListener('click', handleOpen);
+      openBtn.addEventListener('touchend', handleOpen, { passive: false });
+    }
+
+    const sendMessage = () => {
+      if (!input) return;
+      const text = input.value.trim().slice(0, 200);
+      if (text.length === 0) return;
+      this.sendChatMessage(text);
+      input.value = '';
+    };
+
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sendMessage();
+      });
+    }
+
+    // Stop keyboard movement and weapon switching while typing in chat
+    if (input) {
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          sendMessage();
+        } else if (e.key === 'Escape') {
+          input.blur();
+        }
+      });
+      input.addEventListener('keyup', (e) => {
+        e.stopPropagation();
+      });
+      input.addEventListener('focus', () => {
+        try { document.exitPointerLock(); } catch (err) {}
+      });
+    }
+
+    // Quick focus chat on pressing '/' when not typing
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== input) {
+        if (container && container.style.display === 'none') {
+          container.style.display = 'flex';
+          if (openBtn) openBtn.style.display = 'none';
+        }
+        e.preventDefault();
+        try { document.exitPointerLock(); } catch (err) {}
+        if (input) input.focus();
+      }
+    });
+  }
+
+  sendChatMessage(text) {
+    if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({
+      type: 'SEND_CHAT',
+      text: text.slice(0, 200)
+    }));
+  }
+
+  appendChatMessage(msg) {
+    const box = document.getElementById('chat-messages');
+    if (!box) return;
+
+    const row = document.createElement('div');
+    row.className = 'chat-msg-row';
+
+    const safeSender = (msg.senderName || 'Player').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeText = (msg.text || '').slice(0, 200).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    let timeStr = '';
+    if (msg.timestamp) {
+      const d = new Date(msg.timestamp);
+      timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    row.innerHTML = `
+      <span class="chat-msg-sender">[${safeSender}]:</span>
+      <span class="chat-msg-text">${safeText}</span>
+      ${timeStr ? `<span class="chat-msg-time">${timeStr}</span>` : ''}
+    `;
+
+    box.appendChild(row);
+
+    // Auto-scroll to bottom
+    box.scrollTop = box.scrollHeight;
   }
 }
